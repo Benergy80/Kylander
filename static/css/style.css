@@ -1,0 +1,42 @@
+@font-face {
+    font-family: 'HighlanderFont'; /* This is the name you'll use in your styles and JavaScript */
+    src: url('../assets/fonts/HighlanderFont.TTF') format('truetype');
+    /* If you had other font formats like WOFF or WOFF2, you could add them here:
+    src: url('../assets/fonts/HighlanderFont.woff2') format('woff2'),
+         url('../assets/fonts/HighlanderFont.woff') format('woff'),
+         url('../assets/fonts/HighlanderFont.ttf') format('truetype');
+    */
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap; /* Improves perceived loading performance */
+}
+
+body {
+    margin: 0;
+    background-color: #111; /* Dark background */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: 'HighlanderFont', Arial, sans-serif; /* Use HighlanderFont as primary, fallback to Arial */
+    color: white;
+    overflow: hidden; /* Prevent scrollbars if canvas is slightly off */
+}
+
+#game-container {
+    border: 3px solid #4a5568; /* Slightly more prominent border */
+    box-shadow: 0 0 25px rgba(0, 180, 220, 0.6); /* Cyan-ish shadow */
+    /* The canvas dimensions are set in JavaScript, so the container will size to it */
+}
+
+canvas {
+    display: block; /* Removes extra space often found below inline elements like canvas */
+    background-color: #000000; /* Fallback canvas background if no image loads */
+}
+
+/* You can add more specific styles here if needed, e.g., for buttons if you add them outside the canvas */
+/*
+h1, h2, p, button {
+    font-family: 'HighlanderFont', Arial, sans-serif;
+}
+*/
