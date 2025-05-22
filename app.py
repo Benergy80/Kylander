@@ -26,7 +26,7 @@ CLASH_STUN_DURATION = 30  # INCREASED: Even longer stun for more dramatic effect
 KNOCKBACK_DISTANCE = 60   # INCREASED: Very noticeable knockback
 MAX_WINS = 5; SPECIAL_LEVEL_WINS = 3 
 SLIDESHOW_DURATION_MS = 6000; VICTORY_SCREEN_DURATION_MS = 4000
-CONTROLS_SCREEN_DURATION_MS = 1000; CHURCH_INTRO_DURATION_MS = 4000
+CONTROLS_SCREEN_DURATION_MS = 4000; CHURCH_INTRO_DURATION_MS = 4000  # FIXED: Restored 4 second controls screen
 QUICKENING_FLASHES = 6; QUICKENING_FLASH_DURATION_MS = 100
 MAX_PLAYERS_PER_ROOM = 2
 
@@ -932,16 +932,12 @@ def on_change_game_state(data):
         room['current_screen'] = 'MODE_SELECT'
     elif new_state == 'CHARACTER_SELECT_P1' and room['current_screen'] == 'MODE_SELECT':
         mode = data.get('mode')
-        # FIXED: Simplified mode handling
-        if mode == 'ONE':
-            room.update({'game_mode': 'ONE', 'ai_opponent_active': True})
-        elif mode == 'TWO':
-            room.update({'game_mode': 'TWO', 'ai_opponent_active': False})
-        
-        room.update({'current_screen': 'CHARACTER_SELECT_P1',
+        # FIXED: Proper mode selection handling with complete state reset
+        room.update({'game_mode': mode, 'current_screen': 'CHARACTER_SELECT_P1',
                      'p1_selection_complete': False, 'p2_selection_complete': False,
                      'player1_char_name_chosen': None, 'player2_char_name_chosen': None,
-                     'p1_waiting_for_p2': False})
+                     'p1_waiting_for_p2': False,  # Reset waiting flag
+                     'ai_opponent_active': (mode == 'ONE')})
         
         for p_state_sid_iter in list(room['players'].keys()):
             player_obj = room['players'].get(p_state_sid_iter)
@@ -996,7 +992,7 @@ def on_player_character_choice(data):
             ready_for_controls = True
             
         elif room['game_mode'] == 'TWO':
-            # FIXED: Simplified 2-player handling
+            # Check if Player 2 is connected for online mode
             player2_connected = any(p['id'] == 'player2' for p in room['players'].values() if p['sid'] != AI_SID_PLACEHOLDER)
             if player2_connected:
                 room['current_screen'] = 'CHARACTER_SELECT_P2'
@@ -1013,7 +1009,7 @@ def on_player_character_choice(data):
     if ready_for_controls:
         room['current_screen'] = 'CONTROLS'
         room['state_timer_ms'] = CONTROLS_SCREEN_DURATION_MS
-        print(f"🎯 Setting CONTROLS screen for {room['game_mode']} mode")
+        print(f"🎯 Setting CONTROLS screen for {room['game_mode']} mode with {CONTROLS_SCREEN_DURATION_MS}ms timer")
     
     socketio.emit('update_room_state', room, room=game_room_id)
 
@@ -1086,12 +1082,6 @@ def handle_player_actions(data):
                 player['has_hit_this_attack'] = False
                 action_taken = True
                 print(f"⚔️ {player['id']} attacking! Timer: {player['attack_timer']}")
-                
-        elif action_type == 'stop_moving':
-            # REMOVED: This was causing issues - let the physics system handle it
-            pass
-    
-    # The physics system will now properly handle animation resets in update_player_physics_and_timers
 
 @socketio.on('change_background')
 def handle_background_change(data):
@@ -1185,8 +1175,8 @@ def start_game_loop():
 # Production configuration
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    print(f"🗡️ Kylander: Balanced Edition Server starting on port {port}...")
-    print("⚔️ Features: Fixed Walk Animations, Balanced AI, Smooth 2P Mode!")
+    print(f"🗡️ Kylander: FIXED Edition Server starting on port {port}...")
+    print("⚔️ FIXES: 4-second Controls Screen, Proper Mode Selection, Character Choice Flow!")
     
     print("🚀 Starting game loop background task...")
     start_game_loop()
