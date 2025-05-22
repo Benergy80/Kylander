@@ -20,7 +20,7 @@ PLAYER_SPEED = 10
 PLAYER_JUMP_VELOCITY = -15; GRAVITY = 1
 PLAYER_ATTACK_RANGE = 85  # INCREASED: More generous attack range
 PLAYER_SPRITE_HALF_WIDTH = 35 
-ATTACK_DURATION = 45      # INCREASED: Longer attacks for better clash timing (was 40)
+ATTACK_DURATION = 45      # INCREASED: Longer attacks for better clash timing
 ATTACK_COOLDOWN = 20 
 CLASH_STUN_DURATION = 30  # INCREASED: Even longer stun for more dramatic effect
 KNOCKBACK_DISTANCE = 60   # INCREASED: Very noticeable knockback
@@ -34,18 +34,18 @@ PARIS_BG_COUNT = 7; CHURCH_BG_COUNT = 3; VICTORY_BG_COUNT = 10; SLIDESHOW_COUNT 
 CHARACTER_NAMES = ["The Potzer", "The Kylander", "Darichris"]
 AI_SID_PLACEHOLDER = "AI_PLAYER_SID" 
 
-# ENHANCED: AI constants for maximum clashes and epic gameplay
-AI_SPEED_MULTIPLIER = 0.4  # REDUCED: Slower AI movement for better positioning
-AI_PREFERRED_DISTANCE = 60  # REDUCED: AI stays closer for more clashes
-AI_DISTANCE_BUFFER = 15     # REDUCED: Smaller buffer zone for tighter combat
-AI_ATTACK_FREQUENCY = 0.45  # INCREASED: More frequent attacks
+# BALANCED: AI constants - reduced frequency for better gameplay
+AI_SPEED_MULTIPLIER = 0.4  # Slower AI movement for better positioning
+AI_PREFERRED_DISTANCE = 60  # AI stays closer for more clashes
+AI_DISTANCE_BUFFER = 15     # Smaller buffer zone for tighter combat
+AI_ATTACK_FREQUENCY = 0.25  # REDUCED: Less frequent attacks (was 0.45)
 AI_JUMP_FREQUENCY = 0.12    # REDUCED: Less jumping to stay in range
 AI_DUCK_FREQUENCY = 0.15    # REDUCED: Less ducking for more engagement
-AI_ATTACK_COOLDOWN_BONUS = 15  # REDUCED: Shorter cooldown for more action
+AI_ATTACK_COOLDOWN_BONUS = 15  # Shorter cooldown for more action
 
-# ULTRA-GENEROUS: Clash detection for maximum epic moments
-CLASH_DETECTION_RANGE = 135  # INCREASED: Even more generous clash range
-VERTICAL_CLASH_TOLERANCE = 95  # INCREASED: More forgiving vertical alignment
+# GENEROUS: Clash detection for epic moments but not overwhelming
+CLASH_DETECTION_RANGE = 135  # Generous clash range
+VERTICAL_CLASH_TOLERANCE = 95  # Forgiving vertical alignment
 
 game_sessions = {}; game_room_id = 'default_room' 
 
@@ -66,7 +66,8 @@ def get_default_player_state(player_id_num, character_name_choice=None):
         'vertical_velocity': 0, 'cooldown_timer': 0, 'has_hit_this_attack': False,
         'is_ready_next_round': False, '_ai_last_duck_time': 0, '_ai_last_jump_time': 0,
         'miss_swing': False,  # Track missed swings for sound effects
-        'knockback_timer': 0  # Track knockback state
+        'knockback_timer': 0,  # Track knockback state
+        'is_moving_this_frame': False  # FIXED: Track if player is actively moving
     }
 
 def get_default_room_state():
@@ -128,8 +129,9 @@ def cleanup_room_state(room_state):
             player_state['miss_swing'] = False
         if '_temp_animation_data' in player_state:
             del player_state['_temp_animation_data']
-        # Reset knockback
+        # Reset knockback and movement tracking
         player_state['knockback_timer'] = 0
+        player_state['is_moving_this_frame'] = False
     room_state['sfx_event_for_client'] = None
     room_state['swordeffects_playing'] = False
     room_state['clash_flash_timer'] = 0  # Reset clash flash effect
@@ -142,7 +144,7 @@ def reset_player_for_round(player_state, room_state):
                          'is_ducking': False, 'vertical_velocity': 0, 'current_animation': 'idle', 
                          'has_hit_this_attack': False, 'is_ready_next_round': False,
                          'facing': 1 if player_state['id'] == 'player1' else -1,
-                         'miss_swing': False, 'knockback_timer': 0})  
+                         'miss_swing': False, 'knockback_timer': 0, 'is_moving_this_frame': False})  
     # Proper asset swapping for special level
     if room_state['special_level_active'] and player_state['id'] == room_state['special_swap_target_player_id']:
         player_state['character_name'] = "Darichris" 
@@ -235,20 +237,21 @@ def end_special_level(room_state):
     room_state['special_level_original_p2_char'] = None
 
 def update_player_physics_and_timers(player_state):
-    """ENHANCED: Fixed animation handling and better state management"""
+    """FIXED: Better animation handling that preserves walk animations"""
     # Handle knockback - disable ALL movement during knockback
     if player_state.get('knockback_timer', 0) > 0:
         player_state['knockback_timer'] -= 1
         # Prevent all input processing during knockback
         player_state['is_attacking'] = False
         player_state['is_ducking'] = False
+        player_state['is_moving_this_frame'] = False
         # Allow gravity for vertical knockback effect
         if player_state['is_jumping']:
             player_state['y'] += player_state['vertical_velocity']
             player_state['vertical_velocity'] += GRAVITY
             if player_state['y'] >= GROUND_LEVEL:
                 player_state.update({'y': GROUND_LEVEL, 'is_jumping': False, 'vertical_velocity': 0})
-                # FIXED: Always reset to idle when landing during knockback
+                # Reset to idle when landing during knockback
                 player_state['current_animation'] = 'idle'
         return  # Don't process any other movement during knockback
     
@@ -258,9 +261,13 @@ def update_player_physics_and_timers(player_state):
         player_state['vertical_velocity'] += GRAVITY
         if player_state['y'] >= GROUND_LEVEL:
             player_state.update({'y': GROUND_LEVEL, 'is_jumping': False, 'vertical_velocity': 0})
-            # FIXED: Always reset animation on landing
-            if not player_state['is_attacking']: 
-                player_state['current_animation'] = 'idle'
+            # FIXED: Only reset animation on landing if not doing other actions
+            if not player_state['is_attacking'] and not player_state['is_ducking']: 
+                # Check if we're still moving
+                if player_state.get('is_moving_this_frame', False):
+                    player_state['current_animation'] = 'walk'
+                else:
+                    player_state['current_animation'] = 'idle'
     
     # Handle cooldown timer
     if player_state['cooldown_timer'] > 0: 
@@ -276,18 +283,28 @@ def update_player_physics_and_timers(player_state):
             player_state.update({
                 'is_attacking': False, 
                 'has_hit_this_attack': False, 
-                'cooldown_timer': ATTACK_COOLDOWN,
-                # FIXED: Always reset animation properly
-                'current_animation': 'idle' if not player_state['is_jumping'] else 'jump'
+                'cooldown_timer': ATTACK_COOLDOWN
             })
+            # FIXED: Proper animation reset after attacking
+            if player_state['is_jumping']:
+                player_state['current_animation'] = 'jump'
+            elif player_state['is_ducking']:
+                player_state['current_animation'] = 'duck'
+            elif player_state.get('is_moving_this_frame', False):
+                player_state['current_animation'] = 'walk'
+            else:
+                player_state['current_animation'] = 'idle'
     
-    # ENHANCED: Auto-reset walk animation to idle if not actively walking
+    # FIXED: Only reset walk animation if we're NOT moving this frame
     if (not player_state['is_attacking'] and 
         not player_state['is_jumping'] and 
         not player_state['is_ducking'] and 
-        player_state['current_animation'] == 'walk'):
-        # This will be overridden by movement actions if player is actually moving
+        player_state['current_animation'] == 'walk' and
+        not player_state.get('is_moving_this_frame', False)):
         player_state['current_animation'] = 'idle'
+    
+    # Reset movement flag for next frame
+    player_state['is_moving_this_frame'] = False
 
 def apply_screen_wrap(player_state):
     """Handle screen wrapping for players"""
@@ -297,7 +314,7 @@ def apply_screen_wrap(player_state):
         player_state['x'] = GAME_WIDTH + PLAYER_SPRITE_HALF_WIDTH - 1
 
 def update_ai(ai_state, target_state, room_state):
-    """ENHANCED: AI behavior optimized for maximum clashes and epic gameplay"""
+    """BALANCED: AI behavior optimized for good clashes without being overwhelming"""
     if not ai_state or not target_state or ai_state['health'] <= 0: 
         return
     
@@ -312,10 +329,10 @@ def update_ai(ai_state, target_state, room_state):
     distance = abs(dx)
     current_time_s = time.time()
     
-    # ENHANCED: Counter-attack behavior - attack when player attacks for MORE CLASHES!
+    # Counter-attack behavior - more responsive but not overwhelming
     player_attacking = target_state.get('is_attacking', False)
     
-    # Strategic ducking - only when really threatened and not trying to clash
+    # Strategic ducking - only when really threatened
     if (target_state['is_attacking'] and distance < PLAYER_ATTACK_RANGE + 40 and 
         not ai_state['is_jumping'] and not player_attacking and  # Don't duck if we want to clash
         random.random() < AI_DUCK_FREQUENCY):
@@ -328,18 +345,18 @@ def update_ai(ai_state, target_state, room_state):
         if not ai_state['is_attacking'] and not ai_state['is_jumping']:
             ai_state['current_animation'] = 'idle'
     
-    # ENHANCED: Attack logic with AGGRESSIVE counter-attack preference for MAXIMUM CLASHES
+    # BALANCED: Attack logic with moderate counter-attack preference
     attack_frequency = AI_ATTACK_FREQUENCY
     
-    # 🔥 BOOST attack frequency when player is attacking (for EPIC clashes!)
+    # MODERATE boost when player is attacking (for clashes but not overwhelming)
     if player_attacking and distance <= CLASH_DETECTION_RANGE:
-        attack_frequency = 0.90  # 90% chance to attack when player attacks nearby!
-        print(f"⚔️ AI COUNTER-ATTACK MODE! Player attacking at distance {distance}")
+        attack_frequency = 0.65  # 65% chance to attack when player attacks nearby (was 90%)
+        print(f"⚔️ AI counter-attack mode! Player attacking at distance {distance}")
     
-    # Special level Darichris is even more aggressive
+    # Special level Darichris is more aggressive but reasonable
     if room_state.get('special_level_active') and ai_state.get('display_character_name') == 'Darichris':
-        attack_frequency = min(0.95, attack_frequency * 1.4)  # 40% boost, max 95%
-        print(f"👹 DARICHRIS ENHANCED AGGRESSION! Attack frequency: {attack_frequency}")
+        attack_frequency = min(0.75, attack_frequency * 1.2)  # 20% boost, max 75%
+        print(f"👹 Darichris enhanced aggression! Attack frequency: {attack_frequency}")
     
     # Attack when in proper range
     if (not ai_state['is_attacking'] and ai_state['cooldown_timer'] == 0 and 
@@ -356,9 +373,9 @@ def update_ai(ai_state, target_state, room_state):
                 'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS
             })
             if player_attacking:
-                print(f"🔥 AI COUNTER-ATTACKING! Both players attacking - CLASH INCOMING!")
+                print(f"🔥 AI counter-attacking! Both players attacking!")
     
-    # REFINED: Movement logic that prioritizes staying in clash range
+    # Movement logic that prioritizes staying in clash range
     if not ai_state['is_attacking'] and not ai_state['is_ducking']:
         # Move less frequently when player is attacking (to stay in range for clashes)
         movement_chance = 0.4 if player_attacking else 0.7
@@ -369,7 +386,6 @@ def update_ai(ai_state, target_state, room_state):
             # If player is attacking, try to get into clash range
             if player_attacking:
                 target_distance = min(AI_PREFERRED_DISTANCE, distance * 0.85)  # Get closer for clash
-                print(f"📍 AI positioning for clash: target distance {target_distance}")
             
             if distance > target_distance + AI_DISTANCE_BUFFER:
                 # Move closer
@@ -382,8 +398,9 @@ def update_ai(ai_state, target_state, room_state):
                     ai_state['facing'] = -1
                 if not ai_state['is_jumping']:
                     ai_state['current_animation'] = 'walk'
+                    ai_state['is_moving_this_frame'] = True  # FIXED: Track AI movement
             elif distance < target_distance - AI_DISTANCE_BUFFER:
-                # Move away but slower when player attacking (to maintain clash potential)
+                # Move away but slower when player attacking
                 move_speed = int(PLAYER_SPEED * AI_SPEED_MULTIPLIER)
                 if player_attacking:
                     move_speed = max(1, move_speed // 3)  # Much slower retreat during player attacks
@@ -396,6 +413,7 @@ def update_ai(ai_state, target_state, room_state):
                     ai_state['facing'] = -1
                 if not ai_state['is_jumping']:
                     ai_state['current_animation'] = 'walk'
+                    ai_state['is_moving_this_frame'] = True  # FIXED: Track AI movement
             else:
                 # In optimal range - stay put and face opponent
                 if not ai_state['is_jumping']:
@@ -407,7 +425,7 @@ def update_ai(ai_state, target_state, room_state):
                 ai_state['current_animation'] = 'idle'
             ai_state['facing'] = 1 if dx > 0 else -1
     
-    # REDUCED: Less frequent jumping to stay in fighting range
+    # Less frequent jumping to stay in fighting range
     if (not ai_state['is_jumping'] and not ai_state['is_ducking'] and 
         not player_attacking and  # Don't jump during potential clashes
         random.random() < AI_JUMP_FREQUENCY):
@@ -418,7 +436,6 @@ def update_ai(ai_state, target_state, room_state):
                 'current_animation': 'jump'
             })
             ai_state['_ai_last_jump_time'] = current_time_s
-            print(f"🦘 AI jumping tactically")
     
     apply_screen_wrap(ai_state)
 
@@ -582,7 +599,7 @@ def game_tick(room_state):
                 room_state['match_score_p2'] = 0
                 room_state['final_sound_played'] = False
 
-        # 🎮 ENHANCED: Main gameplay logic with ULTRA-GENEROUS clash detection
+        # Main gameplay logic with generous clash detection
         if room_state['current_screen'] == 'PLAYING' or room_state['current_screen'] == 'SPECIAL':
             p1 = get_player_by_id(room_state, 'player1')
             p2 = get_player_by_id(room_state, 'player2')
@@ -616,18 +633,18 @@ def game_tick(room_state):
                 p2_center_x = p2['x'] + SPRITE_CENTER_OFFSET_X
                 p2_center_y = p2['y'] - SPRITE_CENTER_OFFSET_Y
                 
-                # 🔥 ULTRA-GENEROUS: Clash detection with MAXIMUM forgiveness for EPIC clashes!
+                # GENEROUS: Clash detection with good forgiveness for epic clashes
                 if p1['is_attacking'] and p2['is_attacking'] and \
                    p1['health'] > 0 and p2['health'] > 0 and \
                    abs(p1_center_x - p2_center_x) < CLASH_DETECTION_RANGE and \
                    abs(p1_center_y - p2_center_y) < VERTICAL_CLASH_TOLERANCE:
                     
-                    # 🎯 PREDICTIVE: Allow clash if attacks will overlap within next few frames
+                    # PREDICTIVE: Allow clash if attacks will overlap
                     p1_attack_active = p1['is_attacking'] and p1['attack_timer'] > 0
                     p2_attack_active = p2['is_attacking'] and p2['attack_timer'] > 0
                     
-                    # 💫 VERY GENEROUS: Allow clash with very different attack timings
-                    clash_time_window = ATTACK_DURATION * 0.15  # 15% through attack (was 20%)
+                    # GENEROUS: Allow clash with different attack timings
+                    clash_time_window = ATTACK_DURATION * 0.15  # 15% through attack
                     p1_will_hit_soon = p1_attack_active and p1['attack_timer'] > clash_time_window
                     p2_will_hit_soon = p2_attack_active and p2['attack_timer'] > clash_time_window
                     
@@ -636,7 +653,7 @@ def game_tick(room_state):
                         
                         print(f"💥 EPIC CLASH! P1 timer: {p1['attack_timer']}, P2 timer: {p2['attack_timer']}, Distance: {abs(p1_center_x - p2_center_x)}")
                         
-                        # 🎭 DRAMATIC clash effects
+                        # Dramatic clash effects
                         p1.update({
                             'has_hit_this_attack': True, 
                             'cooldown_timer': max(p1['cooldown_timer'], CLASH_STUN_DURATION), 
@@ -648,7 +665,7 @@ def game_tick(room_state):
                             'attack_timer': min(p2['attack_timer'], 2)
                         })
                         
-                        # 💥 MASSIVE knockback with enhanced effects
+                        # Massive knockback with enhanced effects
                         knockback_force = KNOCKBACK_DISTANCE + 25
                         if p1['x'] < p2['x']:
                             p1['x'] -= knockback_force
@@ -657,32 +674,32 @@ def game_tick(room_state):
                             p1['x'] += knockback_force
                             p2['x'] -= knockback_force
                         
-                        # 🚀 Extended knockback duration for more drama
-                        p1['knockback_timer'] = 40  # INCREASED for more dramatic effect
+                        # Extended knockback duration for more drama
+                        p1['knockback_timer'] = 40
                         p2['knockback_timer'] = 40
                         
-                        # 🎪 Dramatic vertical effects
+                        # Dramatic vertical effects
                         if not p1['is_jumping']:
-                            p1['vertical_velocity'] = -14  # INCREASED
+                            p1['vertical_velocity'] = -14
                             p1['is_jumping'] = True
                         if not p2['is_jumping']:
-                            p2['vertical_velocity'] = -14  # INCREASED
+                            p2['vertical_velocity'] = -14
                             p2['is_jumping'] = True
                         
                         # Keep players on screen
                         p1['x'] = max(PLAYER_SPRITE_HALF_WIDTH, min(GAME_WIDTH - PLAYER_SPRITE_HALF_WIDTH, p1['x']))
                         p2['x'] = max(PLAYER_SPRITE_HALF_WIDTH, min(GAME_WIDTH - PLAYER_SPRITE_HALF_WIDTH, p2['x']))
                         
-                        # 🌟 Extended screen flash for MAXIMUM drama
-                        room_state['clash_flash_timer'] = 15  # INCREASED
+                        # Extended screen flash for drama
+                        room_state['clash_flash_timer'] = 15
                         
-                        print("🔥⚔️ LEGENDARY CLASH WITH MAXIMUM DRAMA! ⚔️🔥")
+                        print("🔥⚔️ LEGENDARY CLASH! ⚔️🔥")
                         room_state['sfx_event_for_client'] = 'sfx_swordClash'
                         
                 else:
                     # No clash detected - check for individual hits
-                    ATTACK_RANGE_EXTENSION = 55  # INCREASED for more generous hits
-                    HIT_BOX_WIDTH = 50  # INCREASED hit detection width
+                    ATTACK_RANGE_EXTENSION = 55
+                    HIT_BOX_WIDTH = 50
                     
                     if p1['is_attacking'] and not p1['has_hit_this_attack']:
                         if p1['facing'] == 1:
@@ -772,43 +789,12 @@ def health_check():
         'timestamp': time.time()
     }
 
-@app.route('/start_game_loop')
-def start_game_loop_route():
-    """Manual trigger to start game loop if it's not running"""
-    try:
-        print("🔧 Manual game loop start triggered!")
-        result = start_game_loop()
-        return {'status': 'success' if result else 'failed', 'timestamp': time.time()}
-    except Exception as e:
-        print(f"❌ Failed to start game loop manually: {e}")
-        return {'status': 'error', 'error': str(e), 'timestamp': time.time()}
-
-@app.route('/tick')
-def manual_tick():
-    """Manual single game tick for testing"""
-    try:
-        print("🔧 Manual tick triggered!")
-        room = game_sessions.get(game_room_id)
-        if room:
-            game_tick(room)
-            return {'status': 'tick_executed', 'screen': room.get('current_screen'), 'timer': room.get('state_timer_ms'), 'timestamp': time.time()}
-        else:
-            return {'status': 'no_room', 'timestamp': time.time()}
-    except Exception as e:
-        print(f"❌ Failed manual tick: {e}")
-        import traceback
-        traceback.print_exc()
-        return {'status': 'error', 'error': str(e), 'timestamp': time.time()}
-
 # Socket event handlers
 @socketio.on('connect')
 def handle_connect():
-    # Try to start game loop when first player connects
-    start_game_loop()
-    
     player_sid = request.sid
     room = game_sessions[game_room_id]
-    print(f"🔌 Connect attempt: {player_sid}. Current human SIDs: {[s for s, p in room['players'].items() if s != AI_SID_PLACEHOLDER]}")
+    print(f"🔌 Connect attempt: {player_sid}.")
     
     human_sids_in_room = [sid for sid in room['players'] if sid != AI_SID_PLACEHOLDER]
     assigned_player_id_str = None
@@ -841,12 +827,12 @@ def handle_connect():
     join_room(game_room_id)
     print(f"✅ Player {player_state['id']} ({player_sid}) connected. Total SIDs (inc AI): {len(room['players'])}.")
     
-    # Handle Player 2 connecting after Player 1 has already chosen
+    # FIXED: Handle Player 2 connecting after Player 1 has already chosen
     if player_state['id'] == 'player2' and room['game_mode'] == 'TWO' and \
        room['p1_selection_complete'] and room['current_screen'] == 'CHARACTER_SELECT_P1':
         room['current_screen'] = 'CHARACTER_SELECT_P2'
         room['p1_waiting_for_p2'] = False
-    elif player_state['id'] == 'player2' and room['game_mode'] == 'TWO' and \
+    elif player_state['id'] == 'player2' and room['game_mode'] in ['TWO', 'TWO_LOCAL', 'TWO_ONLINE'] and \
          room['p1_selection_complete'] and not room['p2_selection_complete'] and \
          room['current_screen'] != 'CHARACTER_SELECT_P2': 
         room['current_screen'] = 'CHARACTER_SELECT_P2'
@@ -946,12 +932,11 @@ def on_change_game_state(data):
         room['current_screen'] = 'MODE_SELECT'
     elif new_state == 'CHARACTER_SELECT_P1' and room['current_screen'] == 'MODE_SELECT':
         mode = data.get('mode')
+        # FIXED: Simplified mode handling
         if mode == 'ONE':
-            room.update({'game_mode': 'ONE', 'ai_opponent_active': True, 'is_local_multiplayer': False, 'online_mode': False})
-        elif mode == 'TWO_LOCAL':
-            room.update({'game_mode': 'TWO_LOCAL', 'ai_opponent_active': False, 'is_local_multiplayer': True, 'online_mode': False})
-        elif mode == 'TWO_ONLINE':
-            room.update({'game_mode': 'TWO_ONLINE', 'ai_opponent_active': False, 'is_local_multiplayer': False, 'online_mode': True})
+            room.update({'game_mode': 'ONE', 'ai_opponent_active': True})
+        elif mode == 'TWO':
+            room.update({'game_mode': 'TWO', 'ai_opponent_active': False})
         
         room.update({'current_screen': 'CHARACTER_SELECT_P1',
                      'p1_selection_complete': False, 'p2_selection_complete': False,
@@ -1010,19 +995,17 @@ def on_player_character_choice(data):
             room['p2_selection_complete'] = True
             ready_for_controls = True
             
-        elif room['game_mode'] in ['TWO_LOCAL', 'TWO_ONLINE']:
-            if room['game_mode'] == 'TWO_LOCAL':
+        elif room['game_mode'] == 'TWO':
+            # FIXED: Simplified 2-player handling
+            player2_connected = any(p['id'] == 'player2' for p in room['players'].values() if p['sid'] != AI_SID_PLACEHOLDER)
+            if player2_connected:
                 room['current_screen'] = 'CHARACTER_SELECT_P2'
             else:
-                player2_connected = any(p['id'] == 'player2' for p in room['players'].values() if p['sid'] != AI_SID_PLACEHOLDER)
-                if player2_connected:
-                    room['current_screen'] = 'CHARACTER_SELECT_P2'
-                else:
-                    print("⏳ Waiting for Player 2 to connect for online mode...")
-                    room['p1_waiting_for_p2'] = True
+                print("⏳ Waiting for Player 2 to connect...")
+                room['p1_waiting_for_p2'] = True
             
     elif room['current_screen'] == 'CHARACTER_SELECT_P2' and player_data['id'] == 'player2':
-        if room['game_mode'] in ['TWO_LOCAL', 'TWO_ONLINE'] and room['p1_selection_complete']:
+        if room['game_mode'] == 'TWO' and room['p1_selection_complete']:
             room['player2_char_name_chosen'] = char_name
             room['p2_selection_complete'] = True
             ready_for_controls = True
@@ -1036,7 +1019,7 @@ def on_player_character_choice(data):
 
 @socketio.on('player_actions')
 def handle_player_actions(data):
-    """ENHANCED: Better action handling with animation fixes"""
+    """FIXED: Better action handling with proper walk animation tracking"""
     player_sid = request.sid
     room = game_sessions.get(game_room_id)
     
@@ -1049,11 +1032,13 @@ def handle_player_actions(data):
     
     actions = data.get('actions', [])
     action_taken = False
-    movement_occurred = False
     
     # Skip processing actions during knockback
     if player.get('knockback_timer', 0) > 0:
         return
+    
+    # Reset movement flag at start of frame
+    player['is_moving_this_frame'] = False
     
     for action_data in actions:
         action_type = action_data.get('type')
@@ -1064,15 +1049,15 @@ def handle_player_actions(data):
                 if direction == 'left': 
                     player['x'] -= PLAYER_SPEED
                     player['facing'] = -1
-                    movement_occurred = True
+                    player['is_moving_this_frame'] = True  # FIXED: Track that we're moving
                 elif direction == 'right': 
                     player['x'] += PLAYER_SPEED
                     player['facing'] = 1
-                    movement_occurred = True
+                    player['is_moving_this_frame'] = True  # FIXED: Track that we're moving
                 
                 apply_screen_wrap(player)
                 
-                # FIXED: Only set walk animation if not doing other actions
+                # FIXED: Only set walk animation if not doing other actions AND we're actually moving
                 if not player['is_jumping'] and not player['is_attacking'] and not player['is_ducking']:
                     player['current_animation'] = 'walk'
                 action_taken = True
@@ -1100,24 +1085,13 @@ def handle_player_actions(data):
                 player['current_animation'] = 'jump_attack' if player['is_jumping'] else 'attack'
                 player['has_hit_this_attack'] = False
                 action_taken = True
-                print(f"⚔️ {player['id']} attacking! Timer: {player['attack_timer']}, Mode: {room.get('game_mode', 'unknown')}")
+                print(f"⚔️ {player['id']} attacking! Timer: {player['attack_timer']}")
                 
         elif action_type == 'stop_moving':
-            # ENHANCED: Handle explicit stop movement to fix animation issues
-            if (not player['is_jumping'] and not player['is_attacking'] and 
-                not player['is_ducking'] and player['current_animation'] == 'walk'):
-                player['current_animation'] = 'idle'
-                action_taken = True
+            # REMOVED: This was causing issues - let the physics system handle it
+            pass
     
-    # ENHANCED: Auto-reset animation if no movement occurred this frame
-    if (not movement_occurred and not player['is_jumping'] and not player['is_attacking'] and 
-        not player['is_ducking'] and player['current_animation'] == 'walk'):
-        player['current_animation'] = 'idle'
-    
-    # FALLBACK: Ensure animation is always valid
-    if (not action_taken and not player['is_jumping'] and not player['is_attacking'] and 
-        not player['is_ducking'] and player['current_animation'] not in ['idle', 'jump', 'duck', 'attack', 'jump_attack', 'walk']):
-        player['current_animation'] = 'idle'
+    # The physics system will now properly handle animation resets in update_player_physics_and_timers
 
 @socketio.on('change_background')
 def handle_background_change(data):
@@ -1125,10 +1099,9 @@ def handle_background_change(data):
     room = game_sessions.get(game_room_id)
     
     if not room or player_sid not in room['players']: 
-        print(f"🖼️ Background change failed: room={room is not None}, player={player_sid in room.get('players', {})}")
         return
     
-    print(f"🖼️ Background change requested. Current screen: {room['current_screen']}, Special level: {room.get('special_level_active', False)}")
+    print(f"🖼️ Background change requested. Current screen: {room['current_screen']}")
     
     if room['current_screen'] == 'PLAYING':
         if not room.get('special_level_active', False):
@@ -1151,7 +1124,6 @@ def handle_background_change(data):
         print(f"🚫 Background change ignored for screen: {room['current_screen']}")
         return
     
-    print(f"📡 Broadcasting background change: {room['current_background_key']} {room['current_background_index']}")
     socketio.emit('update_room_state', room, room=game_room_id)
 
 def game_loop_task():
@@ -1213,8 +1185,8 @@ def start_game_loop():
 # Production configuration
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    print(f"🌟 Kylander: Enhanced Edition Server starting on port {port}...")
-    print("⚔️ Features: 5x More Clashes, Fixed Animations, Enhanced AI!")
+    print(f"🗡️ Kylander: Balanced Edition Server starting on port {port}...")
+    print("⚔️ Features: Fixed Walk Animations, Balanced AI, Smooth 2P Mode!")
     
     print("🚀 Starting game loop background task...")
     start_game_loop()
@@ -1224,8 +1196,6 @@ if __name__ == '__main__':
         time.sleep(2)
         print("🔄 Secondary game loop start attempt...")
         start_game_loop()
-    
-    print("🎯 Starting SocketIO server...")
     
     import threading
     delayed_thread = threading.Thread(target=delayed_start)
