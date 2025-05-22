@@ -45,7 +45,7 @@ AI_ATTACK_COOLDOWN_BONUS = 30  # INCREASED: Much longer cooldown (was 20)
 
 game_sessions = {}; game_room_id = 'default_room' 
 
-# Performance optimization variables - IMPROVED for smoother gameplay
+# Performance optimization variables - REVERTED for better performance
 last_broadcast_time = 0
 BROADCAST_INTERVAL = 1.0 / 60  # 60 FPS max
 
@@ -88,7 +88,10 @@ def get_default_room_state():
         # ADDED: Track original character for special level reversion
         'special_level_original_p1_char': None,
         'special_level_original_p2_char': None,
-        'slideshow_music_started': False  # NEW: Track slideshow music state
+        'slideshow_music_started': False,  # NEW: Track slideshow music state
+        # NEW: Enhanced game mode tracking
+        'is_local_multiplayer': False,  # True for local 2P, False for online 2P
+        'online_mode': False  # True for online multiplayer
     }
 game_sessions[game_room_id] = get_default_room_state()
 
@@ -843,11 +846,19 @@ def on_change_game_state(data):
     
     elif new_state == 'MODE_SELECT' and room['current_screen'] == 'TITLE': room['current_screen'] = 'MODE_SELECT'
     elif new_state == 'CHARACTER_SELECT_P1' and room['current_screen'] == 'MODE_SELECT':
-        room.update({'game_mode': data.get('mode'), 'current_screen': 'CHARACTER_SELECT_P1',
+        mode = data.get('mode')
+        # NEW: Handle the three different modes
+        if mode == 'ONE':
+            room.update({'game_mode': 'ONE', 'ai_opponent_active': True, 'is_local_multiplayer': False, 'online_mode': False})
+        elif mode == 'TWO_LOCAL':
+            room.update({'game_mode': 'TWO_LOCAL', 'ai_opponent_active': False, 'is_local_multiplayer': True, 'online_mode': False})
+        elif mode == 'TWO_ONLINE':
+            room.update({'game_mode': 'TWO_ONLINE', 'ai_opponent_active': False, 'is_local_multiplayer': False, 'online_mode': True})
+        
+        room.update({'current_screen': 'CHARACTER_SELECT_P1',
                      'p1_selection_complete':False, 'p2_selection_complete':False,
                      'player1_char_name_chosen':None, 'player2_char_name_chosen':None,
-                     'p1_waiting_for_p2':False,  # Reset waiting flag
-                     'ai_opponent_active': (data.get('mode') == 'ONE')})
+                     'p1_waiting_for_p2':False})
         for p_state_sid_iter in list(room['players'].keys()):
             player_obj = room['players'].get(p_state_sid_iter)
             if player_obj: player_obj.update({'character_name': None, 'original_character_name': None, 'display_character_name': None})
@@ -867,9 +878,10 @@ def on_player_character_choice(data):
     ready_for_controls = False
     if room['current_screen'] == 'CHARACTER_SELECT_P1' and player_data['id'] == 'player1':
         room['player1_char_name_chosen'] = char_name; room['p1_selection_complete'] = True
+        
         if room['game_mode'] == 'ONE':
+            # One player mode - set up AI
             room['ai_opponent_active'] = True
-            # Exclude P1's choice AND Darichris for normal AI opponent selection
             normal_ai_opponent_pool = [cn for cn in CHARACTER_NAMES if cn != char_name and cn != "Darichris"]
             if not normal_ai_opponent_pool:
                 fallback_ai_pool = [cn for cn in CHARACTER_NAMES if cn != char_name]
@@ -879,7 +891,6 @@ def on_player_character_choice(data):
             
             room['player2_char_name_chosen'] = ai_char
             
-            # Ensure AI player object for P2 exists with the chosen character
             if AI_SID_PLACEHOLDER not in room['players']:
                 ai_p_state = get_default_player_state(2, ai_char); ai_p_state['sid'] = AI_SID_PLACEHOLDER
                 ai_p_state['id'] = 'player2'
@@ -891,28 +902,30 @@ def on_player_character_choice(data):
                                                             'id': 'player2'})
             print(f"AI (player2) set to {ai_char}")
             room['p2_selection_complete'] = True; ready_for_controls = True
-        elif room['game_mode'] == 'TWO':
-            # FIXED: In 2-player mode, always advance to P2 selection after P1 chooses
-            # Check if P2 is already connected
-            player2_connected = any(p['id'] == 'player2' for p in room['players'].values() if p['sid'] != AI_SID_PLACEHOLDER)
-            if player2_connected:
-                # Player 2 is already connected, advance to P2 selection screen
+            
+        elif room['game_mode'] in ['TWO_LOCAL', 'TWO_ONLINE']:
+            # Two player modes - check if P2 is connected for online mode
+            if room['game_mode'] == 'TWO_LOCAL':
+                # Local mode - proceed to P2 selection immediately
                 room['current_screen'] = 'CHARACTER_SELECT_P2'
-            else:
-                # Player 2 not connected yet, wait at P1 screen showing waiting message
-                # The screen will change to P2 selection when P2 connects
-                print("Waiting for Player 2 to connect...")
-                room['p1_waiting_for_p2'] = True
+            else:  # TWO_ONLINE
+                # Online mode - check if P2 is connected
+                player2_connected = any(p['id'] == 'player2' for p in room['players'].values() if p['sid'] != AI_SID_PLACEHOLDER)
+                if player2_connected:
+                    room['current_screen'] = 'CHARACTER_SELECT_P2'
+                else:
+                    print("Waiting for Player 2 to connect for online mode...")
+                    room['p1_waiting_for_p2'] = True
             
     elif room['current_screen'] == 'CHARACTER_SELECT_P2' and player_data['id'] == 'player2':
-        if room['game_mode'] == 'TWO' and room['p1_selection_complete']:
+        if room['game_mode'] in ['TWO_LOCAL', 'TWO_ONLINE'] and room['p1_selection_complete']:
             room['player2_char_name_chosen'] = char_name; room['p2_selection_complete'] = True
             ready_for_controls = True
 
     if ready_for_controls:
         room['current_screen'] = 'CONTROLS'
         room['state_timer_ms'] = CONTROLS_SCREEN_DURATION_MS
-        print(f"🎯 Setting CONTROLS screen with timer: {CONTROLS_SCREEN_DURATION_MS}ms")  # DEBUG
+        print(f"🎯 Setting CONTROLS screen for {room['game_mode']} mode")
     socketio.emit('update_room_state', room, room=game_room_id)
 
 @socketio.on('player_actions')
@@ -1011,36 +1024,30 @@ def game_loop_task():
                 loop_count += 1
                 room = game_sessions.get(game_room_id)
                 
-                # PERFORMANCE: Reduced debug logging - only every 300 loops (5 seconds)
-                if loop_count % 300 == 0:
+                # REVERTED: Back to reasonable debug logging
+                if loop_count % 120 == 0:
                     if room:
-                        print(f"🎮 Performance: Screen={room.get('current_screen', 'UNKNOWN')}, Players={len(room.get('players', {}))}")
+                        print(f"🎮 Status: Screen={room.get('current_screen', 'UNKNOWN')}, Players={len(room.get('players', {}))}")
                 
                 if room: 
                     current_time = time.time()
-                    # PERFORMANCE: More frequent updates for smoother gameplay
+                    # REVERTED: Standard 60 FPS processing
                     if current_time - last_broadcast_time >= BROADCAST_INTERVAL:
                         try:
                             game_tick(room)
                             last_broadcast_time = current_time
                         except Exception as tick_error:
                             print(f"❌ ERROR in game_tick: {tick_error}")
-                            import traceback
-                            traceback.print_exc()
                 
-                # PERFORMANCE: Faster loop for smoother gameplay (90 FPS internal)
-                socketio.sleep(1 / 90)  
+                # REVERTED: Back to 120 FPS sleep for stability
+                socketio.sleep(1 / 120)  
                 
             except Exception as loop_error:
                 print(f"❌ ERROR in game loop: {loop_error}")
-                import traceback
-                traceback.print_exc()
-                socketio.sleep(1)  # Wait before retrying
+                socketio.sleep(1)
                 
     except Exception as fatal_error:
         print(f"💀 FATAL ERROR in game_loop_task: {fatal_error}")
-        import traceback
-        traceback.print_exc()
 
 # Global flag to track if game loop is running
 game_loop_started = False
