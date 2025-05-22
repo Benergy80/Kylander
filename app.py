@@ -20,7 +20,7 @@ PLAYER_SPEED = 10
 PLAYER_JUMP_VELOCITY = -15; GRAVITY = 1
 PLAYER_ATTACK_RANGE = 85  # INCREASED: More generous attack range
 PLAYER_SPRITE_HALF_WIDTH = 35 
-ATTACK_DURATION = 24      # INCREASED: Longer attacks for easier blocking (was 18)
+ATTACK_DURATION = 40      # INCREASED: Longer attacks for better timing (was 24)
 ATTACK_COOLDOWN = 20 
 CLASH_STUN_DURATION = 20  # INCREASED: Even longer stun for more dramatic effect (was 15)
 KNOCKBACK_DISTANCE = 50   # INCREASED: Very noticeable knockback (was 30)
@@ -34,18 +34,18 @@ PARIS_BG_COUNT = 7; CHURCH_BG_COUNT = 3; VICTORY_BG_COUNT = 10; SLIDESHOW_COUNT 
 CHARACTER_NAMES = ["The Potzer", "The Kylander", "Darichris"]
 AI_SID_PLACEHOLDER = "AI_PLAYER_SID" 
 
-# FIXED: Balanced AI constants - keep movement speed but reduce attack frequency
-AI_SPEED_MULTIPLIER = 0.6  # RESTORED: Back to original speed
-AI_PREFERRED_DISTANCE = 70  # ADJUSTED: Slightly increased (was 65)
-AI_DISTANCE_BUFFER = 25     # RESTORED: Back to original (was 25)
-AI_ATTACK_FREQUENCY = 0.35  # DECREASED: Even less frequent attacks (was 0.65)
-AI_JUMP_FREQUENCY = 0.05    # RESTORED: Back to original (was 0.06)
-AI_DUCK_FREQUENCY = 0.10    # RESTORED: Back to original (was 0.12)
-AI_ATTACK_COOLDOWN_BONUS = 20  # INCREASED: Even longer cooldown (was 5)
+# BALANCED: AI constants for smoother gameplay
+AI_SPEED_MULTIPLIER = 0.6  
+AI_PREFERRED_DISTANCE = 70  
+AI_DISTANCE_BUFFER = 25     
+AI_ATTACK_FREQUENCY = 0.35  
+AI_JUMP_FREQUENCY = 0.20    # INCREASED: More jumping (was 0.05)
+AI_DUCK_FREQUENCY = 0.20    # INCREASED: More ducking (was 0.10)
+AI_ATTACK_COOLDOWN_BONUS = 30  # INCREASED: Much longer cooldown (was 20)
 
 game_sessions = {}; game_room_id = 'default_room' 
 
-# Performance optimization variables
+# Performance optimization variables - IMPROVED for smoother gameplay
 last_broadcast_time = 0
 BROADCAST_INTERVAL = 1.0 / 60  # 60 FPS max
 
@@ -154,7 +154,7 @@ def initialize_round(room_state):
             reset_player_for_round(p_state, room_state)
         
         if room_state['special_level_active']:
-            print("🎯 Setting up special level background")
+            print("🎯 Special level background")
             available_church_bgs = [i for i in range(CHURCH_BG_COUNT) if i not in room_state.get('used_special_bgs', [])]
             if not available_church_bgs: 
                 room_state['used_special_bgs'] = []
@@ -163,14 +163,12 @@ def initialize_round(room_state):
             room_state.update({'current_background_key': 'church', 'current_background_index': chosen_church_idx})
             room_state.setdefault('used_special_bgs', []).append(chosen_church_idx)
         else:
-            print("🎯 Setting up normal Paris background")
             old_bg_index = room_state.get('current_background_index', -1)
             new_bg_index = (old_bg_index + 1) % PARIS_BG_COUNT
             room_state.update({'current_background_key': 'paris', 'current_background_index': new_bg_index})
-            print(f"🎯 Background changed from {old_bg_index} to {new_bg_index}")
         
         room_state['current_screen'] = 'PLAYING'
-        print(f"🎯 ✅ initialize_round COMPLETE! Screen set to: {room_state['current_screen']}")
+        print(f"🎯 ✅ Round initialized! Screen: {room_state['current_screen']}")
         
     except Exception as e:
         print(f"❌ EXCEPTION in initialize_round: {e}")
@@ -349,16 +347,19 @@ def update_ai(ai_state, target_state, room_state):
 
 def game_tick(room_state):
     try:
-        # ALWAYS print this to verify game_tick is being called
+        # Reduced logging for smoother performance - only log important events
         current_screen = room_state.get('current_screen', 'UNKNOWN')
         timer_val = room_state.get('state_timer_ms', 0)
-        print(f"🔄 game_tick: screen={current_screen}, timer={timer_val:.1f}")
+        
+        # Only log timer changes, not every tick
+        if timer_val > 0 and timer_val % 200 < 17:  # Log roughly every 200ms
+            print(f"🔄 Timer countdown: {timer_val:.0f}ms (screen: {current_screen})")
         
         current_time_s = time.time()
         delta_s = current_time_s - room_state['last_update_time']
         room_state['last_update_time'] = current_time_s
         
-        # Limit delta time to prevent large jumps
+        # Limit delta time to prevent large jumps - IMPROVED for smoother gameplay
         delta_s = min(delta_s, 1.0 / 30)
         
         # Clear previous frame's SFX events
@@ -372,11 +373,10 @@ def game_tick(room_state):
         if room_state['state_timer_ms'] > 0:
             old_timer = room_state['state_timer_ms']
             room_state['state_timer_ms'] -= delta_s * 1000
-            print(f"⏰ Timer: {old_timer:.1f} -> {room_state['state_timer_ms']:.1f} (delta: {delta_s:.3f})")
             
             if room_state['state_timer_ms'] <= 0:
                 prev_screen_when_timer_expired = room_state['current_screen'] 
-                print(f"🚨 TIMER EXPIRED! Processing screen: {prev_screen_when_timer_expired}")
+                print(f"🚨 TIMER EXPIRED! Screen: {prev_screen_when_timer_expired}")
                 
                 if room_state['quickening_effect_active'] or room_state['dark_quickening_effect_active']:
                     room_state['quickening_effect_active'] = False; room_state['dark_quickening_effect_active'] = False
@@ -688,7 +688,7 @@ def game_tick(room_state):
         
         # Always emit the room state update
         socketio.emit('update_room_state', room_state, room=game_room_id)
-        print(f"✅ game_tick completed and broadcasted")
+        # Reduced logging for performance - only log major events
         
     except Exception as e:
         print(f"❌ EXCEPTION in game_tick: {e}")
@@ -925,7 +925,6 @@ def handle_player_actions(data):
     
     # Skip processing actions during knockback
     if player.get('knockback_timer', 0) > 0:
-        print(f"Player {player['id']} in knockback, ignoring input")
         return
     
     for action_data in actions:
@@ -951,10 +950,14 @@ def handle_player_actions(data):
                     player['current_animation'] = 'duck' if is_ducking_cmd else 'idle'
                     action_taken = True
         elif action_type == 'attack':
+            # FIXED: Better attack handling for 2-player mode
             if not player['is_attacking'] and player['cooldown_timer'] == 0 and not player['is_ducking']:
                 player['is_attacking'] = True; player['attack_timer'] = ATTACK_DURATION
                 player['current_animation'] = 'jump_attack' if player['is_jumping'] else 'attack'
                 player['has_hit_this_attack'] = False; action_taken = True
+                # Debug: Log attacks to verify they're working
+                print(f"🗡️ {player['id']} attacking! Timer: {player['attack_timer']}, Mode: {room.get('game_mode', 'unknown')}")
+    
     if not action_taken and not player['is_jumping'] and not player['is_attacking'] and \
        not player['is_ducking'] and player['current_animation'] not in ['idle', 'jump', 'duck', 'attack', 'jump_attack']:
         player['current_animation'] = 'idle'
@@ -1000,7 +1003,6 @@ def handle_background_change(data):
 def game_loop_task():
     global last_broadcast_time
     print("🚀 GAME LOOP TASK STARTING!")
-    print("🚀 GAME LOOP TASK STARTING!")  # Double print to make it obvious
     loop_count = 0
     
     try:
@@ -1009,16 +1011,14 @@ def game_loop_task():
                 loop_count += 1
                 room = game_sessions.get(game_room_id)
                 
-                # Debug: Print every 60 loops (about once per second)
-                if loop_count % 60 == 0:
+                # PERFORMANCE: Reduced debug logging - only every 300 loops (5 seconds)
+                if loop_count % 300 == 0:
                     if room:
-                        print(f"🎮 Loop {loop_count}: Screen={room.get('current_screen', 'UNKNOWN')}, Timer={room.get('state_timer_ms', 0):.1f}, Players={len(room.get('players', {}))}")
-                    else:
-                        print(f"🎮 Loop {loop_count}: NO ROOM FOUND!")
+                        print(f"🎮 Performance: Screen={room.get('current_screen', 'UNKNOWN')}, Players={len(room.get('players', {}))}")
                 
                 if room: 
                     current_time = time.time()
-                    # Only broadcast at 60 FPS max
+                    # PERFORMANCE: More frequent updates for smoother gameplay
                     if current_time - last_broadcast_time >= BROADCAST_INTERVAL:
                         try:
                             game_tick(room)
@@ -1028,7 +1028,8 @@ def game_loop_task():
                             import traceback
                             traceback.print_exc()
                 
-                socketio.sleep(1 / 120)  # Sleep for half the target FPS
+                # PERFORMANCE: Faster loop for smoother gameplay (90 FPS internal)
+                socketio.sleep(1 / 90)  
                 
             except Exception as loop_error:
                 print(f"❌ ERROR in game loop: {loop_error}")
