@@ -2,10 +2,17 @@ from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
 import random
 import time
+import os
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'kylander_is_the_best_keep_it_secret_CHANGE_THIS!'
-socketio = SocketIO(app, async_mode='eventlet')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'kylander_is_the_best_keep_it_secret_CHANGE_THIS!')
+
+# Configure SocketIO for production
+socketio = SocketIO(app, 
+                   async_mode='eventlet',
+                   cors_allowed_origins="*",  # Allow all origins for production
+                   logger=True, 
+                   engineio_logger=True)
 
 # --- Game Constants ---
 GAME_WIDTH = 800; GAME_HEIGHT = 600; GROUND_LEVEL = GAME_HEIGHT - 50
@@ -19,7 +26,7 @@ CLASH_STUN_DURATION = 20  # INCREASED: Even longer stun for more dramatic effect
 KNOCKBACK_DISTANCE = 50   # INCREASED: Very noticeable knockback (was 30)
 MAX_WINS = 5; SPECIAL_LEVEL_WINS = 3 
 SLIDESHOW_DURATION_MS = 6000; VICTORY_SCREEN_DURATION_MS = 4000
-CONTROLS_SCREEN_DURATION_MS = 4000; CHURCH_INTRO_DURATION_MS = 4000
+CONTROLS_SCREEN_DURATION_MS = 1000; CHURCH_INTRO_DURATION_MS = 4000
 QUICKENING_FLASHES = 6; QUICKENING_FLASH_DURATION_MS = 100
 MAX_PLAYERS_PER_ROOM = 2
 
@@ -234,7 +241,7 @@ def apply_screen_wrap(player_state):
     elif player_state['x'] < -PLAYER_SPRITE_HALF_WIDTH: player_state['x'] = GAME_WIDTH + PLAYER_SPRITE_HALF_WIDTH -1
 
 def update_ai(ai_state, target_state, room_state):
-    """Much easier AI with slower movement and less aggression"""
+    """Balanced AI behavior with proper positioning"""
     if not ai_state or not target_state or ai_state['health'] <= 0: return
     update_player_physics_and_timers(ai_state)
     
@@ -247,7 +254,7 @@ def update_ai(ai_state, target_state, room_state):
     distance = abs(dx)
     current_time_s = time.time()
     
-    # FIXED: Much more selective ducking - only when really threatened
+    # FIXED: More selective ducking - only when actually threatened
     if (target_state['is_attacking'] and distance < PLAYER_ATTACK_RANGE + 40 and 
         not ai_state['is_jumping'] and random.random() < AI_DUCK_FREQUENCY):
         if current_time_s - ai_state.get('_ai_last_duck_time', 0) > 2.5:  # INCREASED cooldown
@@ -909,6 +916,8 @@ def game_loop_task():
 
 socketio.start_background_task(target=game_loop_task)
 
+# Production configuration
 if __name__ == '__main__':
-    print(f"Server starting on http://127.0.0.1:5000 ...")
-    socketio.run(app, debug=True, use_reloader=False)
+    port = int(os.environ.get('PORT', 5000))
+    print(f"Server starting on port {port}...")
+    socketio.run(app, host='0.0.0.0', port=port, debug=False)
