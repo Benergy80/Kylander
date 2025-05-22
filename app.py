@@ -854,7 +854,7 @@ def on_player_character_choice(data):
     if ready_for_controls:
         room['current_screen'] = 'CONTROLS'
         room['state_timer_ms'] = CONTROLS_SCREEN_DURATION_MS
-        print(f"Setting CONTROLS screen with timer: {CONTROLS_SCREEN_DURATION_MS}ms")  # DEBUG
+        print(f"🎯 Setting CONTROLS screen with timer: {CONTROLS_SCREEN_DURATION_MS}ms")  # DEBUG
     socketio.emit('update_room_state', room, room=game_room_id)
 
 @socketio.on('player_actions')
