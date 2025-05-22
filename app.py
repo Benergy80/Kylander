@@ -141,35 +141,41 @@ def reset_player_for_round(player_state, room_state):
         player_state['display_character_name'] = player_state['original_character_name']
 
 def initialize_round(room_state):
-    print("initialize_round called!")  # DEBUG
-    cleanup_room_state(room_state)
-    
-    room_state.update({'round_winner_player_id': None, 'state_timer_ms': 0, 
-                       'quickening_effect_active': False, 'dark_quickening_effect_active': False,
-                       'sfx_event_for_client': None, 'swordeffects_playing': False})
-    
-    print(f"Resetting {len(room_state['players'])} players")  # DEBUG
-    for p_state in room_state['players'].values(): 
-        reset_player_for_round(p_state, room_state)
-    
-    if room_state['special_level_active']:
-        print("Setting up special level background")  # DEBUG
-        available_church_bgs = [i for i in range(CHURCH_BG_COUNT) if i not in room_state.get('used_special_bgs', [])]
-        if not available_church_bgs: 
-            room_state['used_special_bgs'] = []
-            available_church_bgs = list(range(CHURCH_BG_COUNT))
-        chosen_church_idx = random.choice(available_church_bgs)
-        room_state.update({'current_background_key': 'church', 'current_background_index': chosen_church_idx})
-        room_state.setdefault('used_special_bgs', []).append(chosen_church_idx)
-    else:
-        print("Setting up normal Paris background")  # DEBUG
-        old_bg_index = room_state.get('current_background_index', -1)
-        new_bg_index = (old_bg_index + 1) % PARIS_BG_COUNT
-        room_state.update({'current_background_key': 'paris', 'current_background_index': new_bg_index})
-        print(f"Background changed from {old_bg_index} to {new_bg_index}")  # DEBUG
-    
-    room_state['current_screen'] = 'PLAYING'
-    print(f"Screen set to PLAYING! Room state: {room_state['current_screen']}")  # DEBUG
+    print("🎯 initialize_round called!")
+    try:
+        cleanup_room_state(room_state)
+        
+        room_state.update({'round_winner_player_id': None, 'state_timer_ms': 0, 
+                           'quickening_effect_active': False, 'dark_quickening_effect_active': False,
+                           'sfx_event_for_client': None, 'swordeffects_playing': False})
+        
+        print(f"🎯 Resetting {len(room_state['players'])} players")
+        for p_state in room_state['players'].values(): 
+            reset_player_for_round(p_state, room_state)
+        
+        if room_state['special_level_active']:
+            print("🎯 Setting up special level background")
+            available_church_bgs = [i for i in range(CHURCH_BG_COUNT) if i not in room_state.get('used_special_bgs', [])]
+            if not available_church_bgs: 
+                room_state['used_special_bgs'] = []
+                available_church_bgs = list(range(CHURCH_BG_COUNT))
+            chosen_church_idx = random.choice(available_church_bgs)
+            room_state.update({'current_background_key': 'church', 'current_background_index': chosen_church_idx})
+            room_state.setdefault('used_special_bgs', []).append(chosen_church_idx)
+        else:
+            print("🎯 Setting up normal Paris background")
+            old_bg_index = room_state.get('current_background_index', -1)
+            new_bg_index = (old_bg_index + 1) % PARIS_BG_COUNT
+            room_state.update({'current_background_key': 'paris', 'current_background_index': new_bg_index})
+            print(f"🎯 Background changed from {old_bg_index} to {new_bg_index}")
+        
+        room_state['current_screen'] = 'PLAYING'
+        print(f"🎯 ✅ initialize_round COMPLETE! Screen set to: {room_state['current_screen']}")
+        
+    except Exception as e:
+        print(f"❌ EXCEPTION in initialize_round: {e}")
+        import traceback
+        traceback.print_exc()
 
 def handle_round_victory(room_state, victor_player_id, loser_player_id):
     if room_state['current_screen'] not in ['PLAYING', 'SPECIAL']: 
@@ -342,29 +348,32 @@ def update_ai(ai_state, target_state, room_state):
     apply_screen_wrap(ai_state)
 
 def game_tick(room_state):
-    current_time_s = time.time()
-    delta_s = current_time_s - room_state['last_update_time']
-    room_state['last_update_time'] = current_time_s
-    
-    # Limit delta time to prevent large jumps
-    delta_s = min(delta_s, 1.0 / 30)
-    
-    # Clear previous frame's SFX events
-    room_state['sfx_event_for_client'] = None 
-    
-    # Handle clash flash effect
-    if room_state.get('clash_flash_timer', 0) > 0:
-        room_state['clash_flash_timer'] -= 1
-
-    # FIXED: Only handle timer once per frame
-    if room_state['state_timer_ms'] > 0:
-        old_timer = room_state['state_timer_ms']
-        room_state['state_timer_ms'] -= delta_s * 1000
-        print(f"Timer: {old_timer:.1f} -> {room_state['state_timer_ms']:.1f} (screen: {room_state['current_screen']})")  # DEBUG
+    try:
+        print(f"🔄 game_tick called: screen={room_state.get('current_screen', 'UNKNOWN')}, timer={room_state.get('state_timer_ms', 0):.1f}")
         
-        if room_state['state_timer_ms'] <= 0:
-            prev_screen_when_timer_expired = room_state['current_screen'] 
-            print(f"Timer expired! Processing screen: {prev_screen_when_timer_expired}")  # DEBUG
+        current_time_s = time.time()
+        delta_s = current_time_s - room_state['last_update_time']
+        room_state['last_update_time'] = current_time_s
+        
+        # Limit delta time to prevent large jumps
+        delta_s = min(delta_s, 1.0 / 30)
+        
+        # Clear previous frame's SFX events
+        room_state['sfx_event_for_client'] = None 
+        
+        # Handle clash flash effect
+        if room_state.get('clash_flash_timer', 0) > 0:
+            room_state['clash_flash_timer'] -= 1
+
+        # FIXED: Only handle timer once per frame
+        if room_state['state_timer_ms'] > 0:
+            old_timer = room_state['state_timer_ms']
+            room_state['state_timer_ms'] -= delta_s * 1000
+            print(f"⏰ Timer: {old_timer:.1f} -> {room_state['state_timer_ms']:.1f} (screen: {room_state['current_screen']}, delta: {delta_s:.3f})")
+            
+            if room_state['state_timer_ms'] <= 0:
+                prev_screen_when_timer_expired = room_state['current_screen'] 
+                print(f"🚨 TIMER EXPIRED! Processing screen: {prev_screen_when_timer_expired}")
             
             if room_state['quickening_effect_active'] or room_state['dark_quickening_effect_active']:
                 room_state['quickening_effect_active'] = False; room_state['dark_quickening_effect_active'] = False
@@ -439,9 +448,11 @@ def game_tick(room_state):
                     else: room_state['victory_sfx_to_play_index'] = random.randint(0,4)
             
             elif prev_screen_when_timer_expired == 'CONTROLS': 
-                print("CONTROLS timer expired - initializing round")  # DEBUG
+                print("🎯 CONTROLS timer expired - calling initialize_round!")
                 initialize_round(room_state) 
+                print(f"✅ initialize_round completed! New screen: {room_state['current_screen']}")
             elif prev_screen_when_timer_expired == 'CHURCH_INTRO': 
+                print("Church intro expired - calling initialize_round!")
                 initialize_round(room_state) 
             # FIXED: Church victory timer handling - return to normal gameplay
             elif prev_screen_when_timer_expired == 'CHURCH_VICTORY':
@@ -661,7 +672,13 @@ def game_tick(room_state):
             elif not (p1['is_attacking'] and p2['is_attacking']):
                 room_state['swordeffects_playing'] = False
                 
-    socketio.emit('update_room_state', room_state, room=game_room_id)
+        print(f"🔄 game_tick completed, emitting update")
+        socketio.emit('update_room_state', room_state, room=game_room_id)
+        
+    except Exception as e:
+        print(f"❌ EXCEPTION in game_tick: {e}")
+        import traceback
+        traceback.print_exc()
 
 @app.route('/')
 def index(): return render_template('index.html')
@@ -924,20 +941,41 @@ def handle_background_change(data):
 
 def game_loop_task():
     global last_broadcast_time
-    print("Game loop task starting...")  # DEBUG
+    print("🚀 GAME LOOP TASK STARTING!")
+    print("🚀 GAME LOOP TASK STARTING!")  # Double print to make it obvious
     loop_count = 0
+    
     while True:
-        room = game_sessions.get(game_room_id)
-        if room: 
-            current_time = time.time()
-            # Only broadcast at 60 FPS max
-            if current_time - last_broadcast_time >= BROADCAST_INTERVAL:
-                loop_count += 1
-                if loop_count % 60 == 0:  # Print every second
-                    print(f"Game loop running: {loop_count} ticks, screen: {room.get('current_screen', 'UNKNOWN')}, timer: {room.get('state_timer_ms', 0):.1f}")
-                game_tick(room)
-                last_broadcast_time = current_time
-        socketio.sleep(1 / 120)  # Sleep for half the target FPS
+        try:
+            loop_count += 1
+            room = game_sessions.get(game_room_id)
+            
+            # Debug: Print every 60 loops (about once per second)
+            if loop_count % 60 == 0:
+                if room:
+                    print(f"🎮 Loop {loop_count}: Screen={room.get('current_screen', 'UNKNOWN')}, Timer={room.get('state_timer_ms', 0):.1f}, Players={len(room.get('players', {}))}")
+                else:
+                    print(f"🎮 Loop {loop_count}: NO ROOM FOUND!")
+            
+            if room: 
+                current_time = time.time()
+                # Only broadcast at 60 FPS max
+                if current_time - last_broadcast_time >= BROADCAST_INTERVAL:
+                    try:
+                        game_tick(room)
+                        last_broadcast_time = current_time
+                    except Exception as tick_error:
+                        print(f"❌ ERROR in game_tick: {tick_error}")
+                        import traceback
+                        traceback.print_exc()
+            
+            socketio.sleep(1 / 120)  # Sleep for half the target FPS
+            
+        except Exception as loop_error:
+            print(f"❌ ERROR in game loop: {loop_error}")
+            import traceback
+            traceback.print_exc()
+            socketio.sleep(1)  # Wait before retrying
 
 socketio.start_background_task(target=game_loop_task)
 
