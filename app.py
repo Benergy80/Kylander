@@ -26,7 +26,7 @@ CLASH_STUN_DURATION = 20  # INCREASED: Even longer stun for more dramatic effect
 KNOCKBACK_DISTANCE = 50   # INCREASED: Very noticeable knockback (was 30)
 MAX_WINS = 5; SPECIAL_LEVEL_WINS = 3 
 SLIDESHOW_DURATION_MS = 6000; VICTORY_SCREEN_DURATION_MS = 4000
-CONTROLS_SCREEN_DURATION_MS = 1000; CHURCH_INTRO_DURATION_MS = 4000  # DEBUG: Changed to 100 for testing
+CONTROLS_SCREEN_DURATION_MS = 1000; CHURCH_INTRO_DURATION_MS = 4000
 QUICKENING_FLASHES = 6; QUICKENING_FLASH_DURATION_MS = 100
 MAX_PLAYERS_PER_ROOM = 2
 
@@ -374,304 +374,304 @@ def game_tick(room_state):
             if room_state['state_timer_ms'] <= 0:
                 prev_screen_when_timer_expired = room_state['current_screen'] 
                 print(f"🚨 TIMER EXPIRED! Processing screen: {prev_screen_when_timer_expired}")
-            
-            if room_state['quickening_effect_active'] or room_state['dark_quickening_effect_active']:
-                room_state['quickening_effect_active'] = False; room_state['dark_quickening_effect_active'] = False
                 
-                # FIXED: Handle SPECIAL_END state for dark quickening
-                if prev_screen_when_timer_expired == 'SPECIAL_END':
-                    # Show GAME_OVER screen after dark quickening
-                    room_state.update({'current_screen': 'GAME_OVER', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
-                elif room_state['game_winner_player_id']:
+                if room_state['quickening_effect_active'] or room_state['dark_quickening_effect_active']:
+                    room_state['quickening_effect_active'] = False; room_state['dark_quickening_effect_active'] = False
+                    
+                    # FIXED: Handle SPECIAL_END state for dark quickening
                     if prev_screen_when_timer_expired == 'SPECIAL_END':
-                        # Show GAME_OVER screen for special level defeat
+                        # Show GAME_OVER screen after dark quickening
                         room_state.update({'current_screen': 'GAME_OVER', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
-                    else:
-                        room_state.update({'current_screen': 'FINAL', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS}) 
-                    if not room_state['final_sound_played']: room_state['final_sound_played'] = True 
-                # FIXED: Church victory handling - match original kylander2.py exactly
-                elif prev_screen_when_timer_expired == 'SPECIAL' and \
-                     room_state['round_winner_player_id'] == room_state['special_swap_target_player_id']:
-                    # Darichris (swapped player) won the special round. Show church victory screen.
-                    print("Darichris won special round. Showing church victory screen.")
-                    room_state.update({'current_screen': 'CHURCH_VICTORY', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
-                    # In original, it randomly picks between churchvictory.png and churchvictory2.png
-                    room_state['current_background_index'] = random.choice([0, 1])
-                    # FIXED: End special level after Darichris wins
-                    end_special_level(room_state)
-                elif prev_screen_when_timer_expired == 'SPECIAL' and \
-                     room_state['round_winner_player_id'] != room_state['special_swap_target_player_id']:
-                    # Original character won special round. Back to normal gameplay.
-                    print("Original character won special round. Showing normal church victory.")
-                    room_state.update({'current_screen': 'CHURCH_VICTORY', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
-                    # Use churchvictory.png (index 0) for original character win
-                    room_state['current_background_index'] = 0
-                    # FIXED: End special level after original character wins
-                    end_special_level(room_state)
-                # FIXED: Special level trigger logic - handle AI opponent winning 3 rounds
-                elif not room_state['special_level_active'] and \
-                     (room_state['match_score_p1'] == SPECIAL_LEVEL_WINS or room_state['match_score_p2'] == SPECIAL_LEVEL_WINS) and \
-                     room_state['round_winner_player_id']: 
-                     room_state['special_level_active'] = True 
-                     winner_of_trigger_round = room_state['round_winner_player_id']
-                     # Store original characters before swapping
-                     p1 = get_player_by_id(room_state, 'player1')
-                     p2 = get_player_by_id(room_state, 'player2')
-                     if p1: room_state['special_level_original_p1_char'] = p1['original_character_name']
-                     if p2: room_state['special_level_original_p2_char'] = p2['original_character_name']
-                     
-                     # CRITICAL FIX: The LOSER becomes Darichris!
-                     if room_state['match_score_p1'] == SPECIAL_LEVEL_WINS:
-                         # Player 1 won 3 rounds, so Player 2 (the opponent) becomes Darichris
-                         room_state['special_swap_target_player_id'] = 'player2'
-                         print(f"Player 1 won 3 rounds. AI opponent (player2) becomes Darichris.")
-                     else:
-                         # Player 2 (AI) won 3 rounds, so Player 1 becomes Darichris  
-                         room_state['special_swap_target_player_id'] = 'player1'
-                         print(f"AI opponent (player2) won 3 rounds. Player 1 becomes Darichris.")
-                     
-                     room_state.update({'current_screen': 'CHURCH_INTRO', 'state_timer_ms': CHURCH_INTRO_DURATION_MS})
-                     print(f"Special Level triggered. Winner: {winner_of_trigger_round}. {room_state['special_swap_target_player_id']} becomes Darichris.")
-                else: 
-                    room_state.update({'current_screen': 'VICTORY', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS, 'current_background_key': 'victory'})
-                    if not room_state.get('available_victory_bgs_player'): room_state['available_victory_bgs_player'] = list(range(VICTORY_BG_COUNT))
-                    if room_state['available_victory_bgs_player']:
-                        idx = random.choice(room_state['available_victory_bgs_player'])
-                        room_state['current_background_index'] = idx; room_state['available_victory_bgs_player'].remove(idx)
-                    else: room_state['current_background_index'] = random.randint(0, VICTORY_BG_COUNT -1)
+                    elif room_state['game_winner_player_id']:
+                        if prev_screen_when_timer_expired == 'SPECIAL_END':
+                            # Show GAME_OVER screen for special level defeat
+                            room_state.update({'current_screen': 'GAME_OVER', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
+                        else:
+                            room_state.update({'current_screen': 'FINAL', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS}) 
+                        if not room_state['final_sound_played']: room_state['final_sound_played'] = True 
+                    # FIXED: Church victory handling - match original kylander2.py exactly
+                    elif prev_screen_when_timer_expired == 'SPECIAL' and \
+                         room_state['round_winner_player_id'] == room_state['special_swap_target_player_id']:
+                        # Darichris (swapped player) won the special round. Show church victory screen.
+                        print("Darichris won special round. Showing church victory screen.")
+                        room_state.update({'current_screen': 'CHURCH_VICTORY', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
+                        # In original, it randomly picks between churchvictory.png and churchvictory2.png
+                        room_state['current_background_index'] = random.choice([0, 1])
+                        # FIXED: End special level after Darichris wins
+                        end_special_level(room_state)
+                    elif prev_screen_when_timer_expired == 'SPECIAL' and \
+                         room_state['round_winner_player_id'] != room_state['special_swap_target_player_id']:
+                        # Original character won special round. Back to normal gameplay.
+                        print("Original character won special round. Showing normal church victory.")
+                        room_state.update({'current_screen': 'CHURCH_VICTORY', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
+                        # Use churchvictory.png (index 0) for original character win
+                        room_state['current_background_index'] = 0
+                        # FIXED: End special level after original character wins
+                        end_special_level(room_state)
+                    # FIXED: Special level trigger logic - handle AI opponent winning 3 rounds
+                    elif not room_state['special_level_active'] and \
+                         (room_state['match_score_p1'] == SPECIAL_LEVEL_WINS or room_state['match_score_p2'] == SPECIAL_LEVEL_WINS) and \
+                         room_state['round_winner_player_id']: 
+                         room_state['special_level_active'] = True 
+                         winner_of_trigger_round = room_state['round_winner_player_id']
+                         # Store original characters before swapping
+                         p1 = get_player_by_id(room_state, 'player1')
+                         p2 = get_player_by_id(room_state, 'player2')
+                         if p1: room_state['special_level_original_p1_char'] = p1['original_character_name']
+                         if p2: room_state['special_level_original_p2_char'] = p2['original_character_name']
+                         
+                         # CRITICAL FIX: The LOSER becomes Darichris!
+                         if room_state['match_score_p1'] == SPECIAL_LEVEL_WINS:
+                             # Player 1 won 3 rounds, so Player 2 (the opponent) becomes Darichris
+                             room_state['special_swap_target_player_id'] = 'player2'
+                             print(f"Player 1 won 3 rounds. AI opponent (player2) becomes Darichris.")
+                         else:
+                             # Player 2 (AI) won 3 rounds, so Player 1 becomes Darichris  
+                             room_state['special_swap_target_player_id'] = 'player1'
+                             print(f"AI opponent (player2) won 3 rounds. Player 1 becomes Darichris.")
+                         
+                         room_state.update({'current_screen': 'CHURCH_INTRO', 'state_timer_ms': CHURCH_INTRO_DURATION_MS})
+                         print(f"Special Level triggered. Winner: {winner_of_trigger_round}. {room_state['special_swap_target_player_id']} becomes Darichris.")
+                    else: 
+                        room_state.update({'current_screen': 'VICTORY', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS, 'current_background_key': 'victory'})
+                        if not room_state.get('available_victory_bgs_player'): room_state['available_victory_bgs_player'] = list(range(VICTORY_BG_COUNT))
+                        if room_state['available_victory_bgs_player']:
+                            idx = random.choice(room_state['available_victory_bgs_player'])
+                            room_state['current_background_index'] = idx; room_state['available_victory_bgs_player'].remove(idx)
+                        else: room_state['current_background_index'] = random.randint(0, VICTORY_BG_COUNT -1)
+                        
+                        if not room_state.get('available_victory_sfx_indices'): room_state['available_victory_sfx_indices'] = list(range(5))
+                        if room_state['available_victory_sfx_indices']:
+                            sfx_idx = random.choice(room_state['available_victory_sfx_indices'])
+                            room_state['victory_sfx_to_play_index'] = sfx_idx
+                            room_state['available_victory_sfx_indices'].remove(sfx_idx)
+                        else: room_state['victory_sfx_to_play_index'] = random.randint(0,4)
+                
+                elif prev_screen_when_timer_expired == 'CONTROLS': 
+                    print("🎯 CONTROLS timer expired - calling initialize_round!")
+                    initialize_round(room_state) 
+                    print(f"✅ initialize_round completed! New screen: {room_state['current_screen']}")
+                elif prev_screen_when_timer_expired == 'CHURCH_INTRO': 
+                    print("Church intro expired - calling initialize_round!")
+                    initialize_round(room_state) 
+                # FIXED: Church victory timer handling - return to normal gameplay
+                elif prev_screen_when_timer_expired == 'CHURCH_VICTORY':
+                    # After church victory screen, return to normal gameplay (not special level)
+                    print("Church victory screen ended. Returning to normal gameplay.")
+                    # Reset special level flags completely
+                    room_state['special_level_active'] = False
+                    room_state['special_swap_target_player_id'] = None
+                    # Clear any special level character tracking
+                    room_state['special_level_original_p1_char'] = None
+                    room_state['special_level_original_p2_char'] = None
+                    # Initialize a new round in normal gameplay
+                    initialize_round(room_state)
+                # FIXED: Handle immediate church victory (when Darichris wins in special level)
+                elif prev_screen_when_timer_expired == 'CHURCH_VICTORY_IMMEDIATE':
+                    # After immediate church victory, return to normal gameplay
+                    print("Immediate church victory ended. Returning to normal gameplay.")
+                    # The special level was already ended, just start a new round
+                    initialize_round(room_state)
+                elif prev_screen_when_timer_expired == 'VICTORY':
+                    if not room_state['game_winner_player_id']: initialize_round(room_state)
+                elif prev_screen_when_timer_expired == 'FINAL': 
+                    room_state.update({'current_screen': 'SLIDESHOW', 'current_background_key': 'slideshow', 
+                                       'current_background_index': 0, 'state_timer_ms': SLIDESHOW_DURATION_MS,
+                                       'slideshow_music_started': True})
+                elif prev_screen_when_timer_expired == 'GAME_OVER':
+                    room_state.update({'current_screen': 'SLIDESHOW', 'current_background_key': 'slideshow', 
+                                       'current_background_index': 0, 'state_timer_ms': SLIDESHOW_DURATION_MS,
+                                       'slideshow_music_started': True})
+
+        # IMPROVED: Slideshow management with better music control
+        if room_state['current_screen'] == 'SLIDESHOW':
+            if room_state['state_timer_ms'] <= 0:
+                # Check if we've shown all slides
+                if room_state['current_background_index'] >= SLIDESHOW_COUNT - 1:
+                    # Slideshow completed naturally - prepare to return to title
+                    print("Slideshow completed naturally - returning to title")
+                    room_state['slideshow_music_started'] = False  # Signal to stop slideshow music
                     
-                    if not room_state.get('available_victory_sfx_indices'): room_state['available_victory_sfx_indices'] = list(range(5))
-                    if room_state['available_victory_sfx_indices']:
-                        sfx_idx = random.choice(room_state['available_victory_sfx_indices'])
-                        room_state['victory_sfx_to_play_index'] = sfx_idx
-                        room_state['available_victory_sfx_indices'].remove(sfx_idx)
-                    else: room_state['victory_sfx_to_play_index'] = random.randint(0,4)
-            
-            elif prev_screen_when_timer_expired == 'CONTROLS': 
-                print("🎯 CONTROLS timer expired - calling initialize_round!")
-                initialize_round(room_state) 
-                print(f"✅ initialize_round completed! New screen: {room_state['current_screen']}")
-            elif prev_screen_when_timer_expired == 'CHURCH_INTRO': 
-                print("Church intro expired - calling initialize_round!")
-                initialize_round(room_state) 
-            # FIXED: Church victory timer handling - return to normal gameplay
-            elif prev_screen_when_timer_expired == 'CHURCH_VICTORY':
-                # After church victory screen, return to normal gameplay (not special level)
-                print("Church victory screen ended. Returning to normal gameplay.")
-                # Reset special level flags completely
-                room_state['special_level_active'] = False
-                room_state['special_swap_target_player_id'] = None
-                # Clear any special level character tracking
-                room_state['special_level_original_p1_char'] = None
-                room_state['special_level_original_p2_char'] = None
-                # Initialize a new round in normal gameplay
-                initialize_round(room_state)
-            # FIXED: Handle immediate church victory (when Darichris wins in special level)
-            elif prev_screen_when_timer_expired == 'CHURCH_VICTORY_IMMEDIATE':
-                # After immediate church victory, return to normal gameplay
-                print("Immediate church victory ended. Returning to normal gameplay.")
-                # The special level was already ended, just start a new round
-                initialize_round(room_state)
-            elif prev_screen_when_timer_expired == 'VICTORY':
-                if not room_state['game_winner_player_id']: initialize_round(room_state)
-            elif prev_screen_when_timer_expired == 'FINAL': 
-                room_state.update({'current_screen': 'SLIDESHOW', 'current_background_key': 'slideshow', 
-                                   'current_background_index': 0, 'state_timer_ms': SLIDESHOW_DURATION_MS,
-                                   'slideshow_music_started': True})
-            elif prev_screen_when_timer_expired == 'GAME_OVER':
-                room_state.update({'current_screen': 'SLIDESHOW', 'current_background_key': 'slideshow', 
-                                   'current_background_index': 0, 'state_timer_ms': SLIDESHOW_DURATION_MS,
-                                   'slideshow_music_started': True})
-
-    # IMPROVED: Slideshow management with better music control
-    if room_state['current_screen'] == 'SLIDESHOW':
-        if room_state['state_timer_ms'] <= 0:
-            # Check if we've shown all slides
-            if room_state['current_background_index'] >= SLIDESHOW_COUNT - 1:
-                # Slideshow completed naturally - prepare to return to title
-                print("Slideshow completed naturally - returning to title")
-                room_state['slideshow_music_started'] = False  # Signal to stop slideshow music
-                
-                # Send update to stop music first
-                socketio.emit('update_room_state', room_state, room=game_room_id)
-                
-                # Brief delay to let music stop, then transition
-                room_state['state_timer_ms'] = 200  # 200ms delay
-                room_state['current_screen'] = 'SLIDESHOW_TO_TITLE'  # Intermediate state
-            else:
-                # Show next slide
-                room_state['current_background_index'] = (room_state['current_background_index'] + 1) % SLIDESHOW_COUNT
-                room_state['state_timer_ms'] = SLIDESHOW_DURATION_MS
-    
-    # Handle slideshow completion transition
-    elif room_state['current_screen'] == 'SLIDESHOW_TO_TITLE':
-        if room_state['state_timer_ms'] <= 0:
-            # Now transition to title
-            room_state.update({'current_screen': 'TITLE', 'current_background_key': 'paris',
-                               'current_background_index': 0, 'slideshow_music_started': False})
-            # Reset game state
-            room_state['match_score_p1'] = 0
-            room_state['match_score_p2'] = 0
-            room_state['final_sound_played'] = False
-
-    if room_state['current_screen'] == 'PLAYING' or room_state['current_screen'] == 'SPECIAL':
-        p1 = get_player_by_id(room_state, 'player1'); p2 = get_player_by_id(room_state, 'player2')
-        if p1 : update_player_physics_and_timers(p1)
-        if p2 :
-            if room_state['ai_opponent_active']: update_ai(p2, p1, room_state)
-            else: update_player_physics_and_timers(p2)
+                    # Send update to stop music first
+                    socketio.emit('update_room_state', room_state, room=game_room_id)
+                    
+                    # Brief delay to let music stop, then transition
+                    room_state['state_timer_ms'] = 200  # 200ms delay
+                    room_state['current_screen'] = 'SLIDESHOW_TO_TITLE'  # Intermediate state
+                else:
+                    # Show next slide
+                    room_state['current_background_index'] = (room_state['current_background_index'] + 1) % SLIDESHOW_COUNT
+                    room_state['state_timer_ms'] = SLIDESHOW_DURATION_MS
         
-        # FIXED: Handle miss swing sound effects
-        if p1 and p1['miss_swing']:
-            room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'
-            p1['miss_swing'] = False
-        if p2 and p2['miss_swing']:
-            room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'
-            p2['miss_swing'] = False
+        # Handle slideshow completion transition
+        elif room_state['current_screen'] == 'SLIDESHOW_TO_TITLE':
+            if room_state['state_timer_ms'] <= 0:
+                # Now transition to title
+                room_state.update({'current_screen': 'TITLE', 'current_background_key': 'paris',
+                                   'current_background_index': 0, 'slideshow_music_started': False})
+                # Reset game state
+                room_state['match_score_p1'] = 0
+                room_state['match_score_p2'] = 0
+                room_state['final_sound_played'] = False
+
+        if room_state['current_screen'] == 'PLAYING' or room_state['current_screen'] == 'SPECIAL':
+            p1 = get_player_by_id(room_state, 'player1'); p2 = get_player_by_id(room_state, 'player2')
+            if p1 : update_player_physics_and_timers(p1)
+            if p2 :
+                if room_state['ai_opponent_active']: update_ai(p2, p1, room_state)
+                else: update_player_physics_and_timers(p2)
             
-        if p1 and p2 and p1['health'] > 0 and p2['health'] > 0:
-            p1_hit_this_tick = False; p2_hit_this_tick = False
-            
-            # IMPROVED: Enhanced collision detection with centered sprites
-            SPRITE_CENTER_OFFSET_X = 0  # Sprites are already centered properly
-            SPRITE_CENTER_OFFSET_Y = 25  # Adjust for bottom-aligned sprites
-            
-            p1_center_x = p1['x'] + SPRITE_CENTER_OFFSET_X
-            p1_center_y = p1['y'] - SPRITE_CENTER_OFFSET_Y
-            p2_center_x = p2['x'] + SPRITE_CENTER_OFFSET_X
-            p2_center_y = p2['y'] - SPRITE_CENTER_OFFSET_Y
-            
-            # INCREASED: Much more generous clash detection
-            CLASH_DETECTION_RANGE = 110  # INCREASED: Even more generous (was 90)
-            VERTICAL_CLASH_TOLERANCE = 80  # INCREASED: (was 70)
-            
-            # IMPROVED: Very generous simultaneous attack handling
-            if p1['is_attacking'] and p2['is_attacking'] and \
-               p1['health'] > 0 and p2['health'] > 0 and \
-               abs(p1_center_x - p2_center_x) < CLASH_DETECTION_RANGE and \
-               abs(p1_center_y - p2_center_y) < VERTICAL_CLASH_TOLERANCE:
+            # FIXED: Handle miss swing sound effects
+            if p1 and p1['miss_swing']:
+                room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'
+                p1['miss_swing'] = False
+            if p2 and p2['miss_swing']:
+                room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'
+                p2['miss_swing'] = False
                 
-                # VERY GENEROUS: Allow clash even with significant timing differences
-                # Check if either player just started attacking or is still attacking
-                p1_attack_active = p1['is_attacking'] and p1['attack_timer'] > 0
-                p2_attack_active = p2['is_attacking'] and p2['attack_timer'] > 0
+            if p1 and p2 and p1['health'] > 0 and p2['health'] > 0:
+                p1_hit_this_tick = False; p2_hit_this_tick = False
                 
-                # Allow clash if both are attacking within a very generous window
-                if p1_attack_active and p2_attack_active and not p1['has_hit_this_attack'] and not p2['has_hit_this_attack']:
-                    print(f"GENEROUS CLASH! P1 timer: {p1['attack_timer']}, P2 timer: {p2['attack_timer']}, Distance: {abs(p1_center_x - p2_center_x)}")
-                    
-                    # Block detected - both players avoid damage completely
-                    p1.update({'has_hit_this_attack': True, 'cooldown_timer': max(p1['cooldown_timer'], CLASH_STUN_DURATION), 'attack_timer': min(p1['attack_timer'], 3)})
-                    p2.update({'has_hit_this_attack': True, 'cooldown_timer': max(p2['cooldown_timer'], CLASH_STUN_DURATION), 'attack_timer': min(p2['attack_timer'], 3)})
-                    
-                    # Apply stronger knockback
-                    old_p1_x, old_p2_x = p1['x'], p2['x']
-                    knockback_force = KNOCKBACK_DISTANCE + 10  # Even stronger knockback
-                    if p1['x'] < p2['x']:
-                        p1['x'] -= knockback_force
-                        p2['x'] += knockback_force
-                    else:
-                        p1['x'] += knockback_force
-                        p2['x'] -= knockback_force
-                    
-                    print(f"STRONG KNOCKBACK! P1: {old_p1_x} -> {p1['x']}, P2: {old_p2_x} -> {p2['x']}")
-                    
-                    # Longer knockback timers for more noticeable effect
-                    p1['knockback_timer'] = 30  # INCREASED: (was 25)
-                    p2['knockback_timer'] = 30  # INCREASED: (was 25)
-                    
-                    # More dramatic vertical bounce
-                    if not p1['is_jumping']:
-                        p1['vertical_velocity'] = -10  # INCREASED: (was -8)
-                        p1['is_jumping'] = True
-                    if not p2['is_jumping']:
-                        p2['vertical_velocity'] = -10  # INCREASED: (was -8)
-                        p2['is_jumping'] = True
-                    
-                    # Ensure players stay on screen
-                    p1['x'] = max(PLAYER_SPRITE_HALF_WIDTH, min(GAME_WIDTH - PLAYER_SPRITE_HALF_WIDTH, p1['x']))
-                    p2['x'] = max(PLAYER_SPRITE_HALF_WIDTH, min(GAME_WIDTH - PLAYER_SPRITE_HALF_WIDTH, p2['x']))
-                    
-                    # Screen flash effect
-                    room_state['clash_flash_timer'] = 8  # INCREASED: (was 5)
-                    
-                    print("GENEROUS CLASH SUCCESSFUL!"); room_state['sfx_event_for_client'] = 'sfx_swordClash'
-                    
-            else:
-                # No clash detected - check for individual hits
-                # IMPROVED: Better collision detection extending to edge of sprites
-                ATTACK_RANGE_EXTENSION = 50  # INCREASED from 42.5 (PLAYER_ATTACK_RANGE / 2)
-                HIT_BOX_WIDTH = 45  # How wide the hit detection is
+                # IMPROVED: Enhanced collision detection with centered sprites
+                SPRITE_CENTER_OFFSET_X = 0  # Sprites are already centered properly
+                SPRITE_CENTER_OFFSET_Y = 25  # Adjust for bottom-aligned sprites
                 
-                if p1['is_attacking'] and not p1['has_hit_this_attack']:
-                    # Calculate attack position extending from sprite edge
-                    if p1['facing'] == 1:  # Facing right
-                        attack_x = p1_center_x + ATTACK_RANGE_EXTENSION
-                    else:  # Facing left
-                        attack_x = p1_center_x - ATTACK_RANGE_EXTENSION
+                p1_center_x = p1['x'] + SPRITE_CENTER_OFFSET_X
+                p1_center_y = p1['y'] - SPRITE_CENTER_OFFSET_Y
+                p2_center_x = p2['x'] + SPRITE_CENTER_OFFSET_X
+                p2_center_y = p2['y'] - SPRITE_CENTER_OFFSET_Y
+                
+                # INCREASED: Much more generous clash detection
+                CLASH_DETECTION_RANGE = 110  # INCREASED: Even more generous (was 90)
+                VERTICAL_CLASH_TOLERANCE = 80  # INCREASED: (was 70)
+                
+                # IMPROVED: Very generous simultaneous attack handling
+                if p1['is_attacking'] and p2['is_attacking'] and \
+                   p1['health'] > 0 and p2['health'] > 0 and \
+                   abs(p1_center_x - p2_center_x) < CLASH_DETECTION_RANGE and \
+                   abs(p1_center_y - p2_center_y) < VERTICAL_CLASH_TOLERANCE:
                     
-                    # Check if attack hit p2 (not ducking)
-                    if abs(attack_x - p2_center_x) < HIT_BOX_WIDTH and \
-                       abs(p1_center_y - p2_center_y) < VERTICAL_CLASH_TOLERANCE and \
-                       not p2['is_ducking']:
-                        p2['health'] -= 10; p1['has_hit_this_attack'] = True; p1_hit_this_tick = True
-                        print(f"P1 HIT P2. P2 Health: {p2['health']}")
-                        room_state['sfx_event_for_client'] = 'sfx_swordSwing'
-                        if p2['health'] <= 0:
-                            # FIXED: Special level logic for AI wins
-                            if room_state['special_level_active']:
-                                if room_state['special_swap_target_player_id'] == 'player2' and p2.get('display_character_name') == "Darichris":
-                                    # Darichris was killed - trigger special ending (dark quickening)
-                                    print("AI killed Darichris on holy ground! Dark quickening...")
-                                    handle_special_level_loss_by_swapped(room_state, 'player1')
+                    # VERY GENEROUS: Allow clash even with significant timing differences
+                    # Check if either player just started attacking or is still attacking
+                    p1_attack_active = p1['is_attacking'] and p1['attack_timer'] > 0
+                    p2_attack_active = p2['is_attacking'] and p2['attack_timer'] > 0
+                    
+                    # Allow clash if both are attacking within a very generous window
+                    if p1_attack_active and p2_attack_active and not p1['has_hit_this_attack'] and not p2['has_hit_this_attack']:
+                        print(f"GENEROUS CLASH! P1 timer: {p1['attack_timer']}, P2 timer: {p2['attack_timer']}, Distance: {abs(p1_center_x - p2_center_x)}")
+                        
+                        # Block detected - both players avoid damage completely
+                        p1.update({'has_hit_this_attack': True, 'cooldown_timer': max(p1['cooldown_timer'], CLASH_STUN_DURATION), 'attack_timer': min(p1['attack_timer'], 3)})
+                        p2.update({'has_hit_this_attack': True, 'cooldown_timer': max(p2['cooldown_timer'], CLASH_STUN_DURATION), 'attack_timer': min(p2['attack_timer'], 3)})
+                        
+                        # Apply stronger knockback
+                        old_p1_x, old_p2_x = p1['x'], p2['x']
+                        knockback_force = KNOCKBACK_DISTANCE + 10  # Even stronger knockback
+                        if p1['x'] < p2['x']:
+                            p1['x'] -= knockback_force
+                            p2['x'] += knockback_force
+                        else:
+                            p1['x'] += knockback_force
+                            p2['x'] -= knockback_force
+                        
+                        print(f"STRONG KNOCKBACK! P1: {old_p1_x} -> {p1['x']}, P2: {old_p2_x} -> {p2['x']}")
+                        
+                        # Longer knockback timers for more noticeable effect
+                        p1['knockback_timer'] = 30  # INCREASED: (was 25)
+                        p2['knockback_timer'] = 30  # INCREASED: (was 25)
+                        
+                        # More dramatic vertical bounce
+                        if not p1['is_jumping']:
+                            p1['vertical_velocity'] = -10  # INCREASED: (was -8)
+                            p1['is_jumping'] = True
+                        if not p2['is_jumping']:
+                            p2['vertical_velocity'] = -10  # INCREASED: (was -8)
+                            p2['is_jumping'] = True
+                        
+                        # Ensure players stay on screen
+                        p1['x'] = max(PLAYER_SPRITE_HALF_WIDTH, min(GAME_WIDTH - PLAYER_SPRITE_HALF_WIDTH, p1['x']))
+                        p2['x'] = max(PLAYER_SPRITE_HALF_WIDTH, min(GAME_WIDTH - PLAYER_SPRITE_HALF_WIDTH, p2['x']))
+                        
+                        # Screen flash effect
+                        room_state['clash_flash_timer'] = 8  # INCREASED: (was 5)
+                        
+                        print("GENEROUS CLASH SUCCESSFUL!"); room_state['sfx_event_for_client'] = 'sfx_swordClash'
+                        
+                else:
+                    # No clash detected - check for individual hits
+                    # IMPROVED: Better collision detection extending to edge of sprites
+                    ATTACK_RANGE_EXTENSION = 50  # INCREASED from 42.5 (PLAYER_ATTACK_RANGE / 2)
+                    HIT_BOX_WIDTH = 45  # How wide the hit detection is
+                    
+                    if p1['is_attacking'] and not p1['has_hit_this_attack']:
+                        # Calculate attack position extending from sprite edge
+                        if p1['facing'] == 1:  # Facing right
+                            attack_x = p1_center_x + ATTACK_RANGE_EXTENSION
+                        else:  # Facing left
+                            attack_x = p1_center_x - ATTACK_RANGE_EXTENSION
+                        
+                        # Check if attack hit p2 (not ducking)
+                        if abs(attack_x - p2_center_x) < HIT_BOX_WIDTH and \
+                           abs(p1_center_y - p2_center_y) < VERTICAL_CLASH_TOLERANCE and \
+                           not p2['is_ducking']:
+                            p2['health'] -= 10; p1['has_hit_this_attack'] = True; p1_hit_this_tick = True
+                            print(f"P1 HIT P2. P2 Health: {p2['health']}")
+                            room_state['sfx_event_for_client'] = 'sfx_swordSwing'
+                            if p2['health'] <= 0:
+                                # FIXED: Special level logic for AI wins
+                                if room_state['special_level_active']:
+                                    if room_state['special_swap_target_player_id'] == 'player2' and p2.get('display_character_name') == "Darichris":
+                                        # Darichris was killed - trigger special ending (dark quickening)
+                                        print("AI killed Darichris on holy ground! Dark quickening...")
+                                        handle_special_level_loss_by_swapped(room_state, 'player1')
+                                    else:
+                                        # The non-Darichris player was killed - this means Darichris won!
+                                        print("Darichris defeated the AI! Church victory...")
+                                        room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
+                                        room_state['current_background_index'] = random.choice([0, 1])
+                                        room_state['round_winner_player_id'] = 'player2'  
+                                        end_special_level(room_state)
                                 else:
-                                    # The non-Darichris player was killed - this means Darichris won!
-                                    print("Darichris defeated the AI! Church victory...")
-                                    room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
-                                    room_state['current_background_index'] = random.choice([0, 1])
-                                    room_state['round_winner_player_id'] = 'player2'  
-                                    end_special_level(room_state)
-                            else:
-                                handle_round_victory(room_state, 'player1', 'player2')
-                
-                if p2['is_attacking'] and not p2['has_hit_this_attack'] and p1['health'] > 0:
-                    # Calculate attack position extending from sprite edge
-                    if p2['facing'] == 1:  # Facing right
-                        attack_x = p2_center_x + ATTACK_RANGE_EXTENSION
-                    else:  # Facing left
-                        attack_x = p2_center_x - ATTACK_RANGE_EXTENSION
+                                    handle_round_victory(room_state, 'player1', 'player2')
                     
-                    # Check if attack hit p1 (not ducking)
-                    if abs(attack_x - p1_center_x) < HIT_BOX_WIDTH and \
-                       abs(p2_center_y - p1_center_y) < VERTICAL_CLASH_TOLERANCE and \
-                       not p1['is_ducking']:
-                        p1['health'] -= 10; p2['has_hit_this_attack'] = True; p2_hit_this_tick = True
-                        print(f"P2 HIT P1. P1 Health: {p1['health']}")
-                        room_state['sfx_event_for_client'] = 'sfx_swordSwing'
-                        if p1['health'] <= 0:
-                            # FIXED: Special level logic for AI opponent
-                            if room_state['special_level_active']:
-                                if room_state['special_swap_target_player_id'] == 'player1' and p1.get('display_character_name') == "Darichris":
-                                    # Darichris was killed - trigger special ending (dark quickening)
-                                    print("AI killed Darichris on holy ground! Dark quickening...")
-                                    handle_special_level_loss_by_swapped(room_state, 'player2')
+                    if p2['is_attacking'] and not p2['has_hit_this_attack'] and p1['health'] > 0:
+                        # Calculate attack position extending from sprite edge
+                        if p2['facing'] == 1:  # Facing right
+                            attack_x = p2_center_x + ATTACK_RANGE_EXTENSION
+                        else:  # Facing left
+                            attack_x = p2_center_x - ATTACK_RANGE_EXTENSION
+                        
+                        # Check if attack hit p1 (not ducking)
+                        if abs(attack_x - p1_center_x) < HIT_BOX_WIDTH and \
+                           abs(p2_center_y - p1_center_y) < VERTICAL_CLASH_TOLERANCE and \
+                           not p1['is_ducking']:
+                            p1['health'] -= 10; p2['has_hit_this_attack'] = True; p2_hit_this_tick = True
+                            print(f"P2 HIT P1. P1 Health: {p1['health']}")
+                            room_state['sfx_event_for_client'] = 'sfx_swordSwing'
+                            if p1['health'] <= 0:
+                                # FIXED: Special level logic for AI opponent
+                                if room_state['special_level_active']:
+                                    if room_state['special_swap_target_player_id'] == 'player1' and p1.get('display_character_name') == "Darichris":
+                                        # Darichris was killed - trigger special ending (dark quickening)
+                                        print("AI killed Darichris on holy ground! Dark quickening...")
+                                        handle_special_level_loss_by_swapped(room_state, 'player2')
+                                    else:
+                                        # The non-Darichris player was killed - this means Darichris won!
+                                        print("Darichris defeated the AI! Church victory...")
+                                        room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
+                                        room_state['current_background_index'] = random.choice([0, 1])
+                                        room_state['round_winner_player_id'] = 'player1'  
+                                        end_special_level(room_state)
                                 else:
-                                    # The non-Darichris player was killed - this means Darichris won!
-                                    print("Darichris defeated the AI! Church victory...")
-                                    room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
-                                    room_state['current_background_index'] = random.choice([0, 1])
-                                    room_state['round_winner_player_id'] = 'player1'  
-                                    end_special_level(room_state)
-                            else:
-                                handle_round_victory(room_state, 'player2', 'player1')
-            
-            # IMPROVED: Sword effects sound matching original
-            if p1['is_attacking'] and p2['is_attacking'] and not room_state['swordeffects_playing']:
-                room_state['sfx_event_for_client'] = 'sfx_swordEffects'
-                room_state['swordeffects_playing'] = True
-            elif not (p1['is_attacking'] and p2['is_attacking']):
-                room_state['swordeffects_playing'] = False
+                                    handle_round_victory(room_state, 'player2', 'player1')
                 
+                # IMPROVED: Sword effects sound matching original
+                if p1['is_attacking'] and p2['is_attacking'] and not room_state['swordeffects_playing']:
+                    room_state['sfx_event_for_client'] = 'sfx_swordEffects'
+                    room_state['swordeffects_playing'] = True
+                elif not (p1['is_attacking'] and p2['is_attacking']):
+                    room_state['swordeffects_playing'] = False
+        
         print(f"🔄 game_tick completed, emitting update")
         socketio.emit('update_room_state', room_state, room=game_room_id)
         
