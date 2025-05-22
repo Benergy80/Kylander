@@ -711,18 +711,38 @@ def health_check():
     }
 
 @app.route('/start_game_loop')
-def start_game_loop():
+def start_game_loop_route():
     """Manual trigger to start game loop if it's not running"""
     try:
         print("🔧 Manual game loop start triggered!")
-        socketio.start_background_task(target=game_loop_task)
-        return {'status': 'game_loop_started', 'timestamp': time.time()}
+        result = start_game_loop()
+        return {'status': 'success' if result else 'failed', 'timestamp': time.time()}
     except Exception as e:
         print(f"❌ Failed to start game loop manually: {e}")
         return {'status': 'error', 'error': str(e), 'timestamp': time.time()}
 
+@app.route('/tick')
+def manual_tick():
+    """Manual single game tick for testing"""
+    try:
+        print("🔧 Manual tick triggered!")
+        room = game_sessions.get(game_room_id)
+        if room:
+            game_tick(room)
+            return {'status': 'tick_executed', 'screen': room.get('current_screen'), 'timer': room.get('state_timer_ms'), 'timestamp': time.time()}
+        else:
+            return {'status': 'no_room', 'timestamp': time.time()}
+    except Exception as e:
+        print(f"❌ Failed manual tick: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'status': 'error', 'error': str(e), 'timestamp': time.time()}
+
 @socketio.on('connect')
 def handle_connect():
+    # Try to start game loop when first player connects
+    start_game_loop()
+    
     player_sid = request.sid; room = game_sessions[game_room_id]
     print(f"Connect attempt: {player_sid}. Current human SIDs: {[s for s, p in room['players'].items() if s != AI_SID_PLACEHOLDER]}")
     human_sids_in_room = [sid for sid in room['players'] if sid != AI_SID_PLACEHOLDER]
@@ -1021,18 +1041,54 @@ def game_loop_task():
         import traceback
         traceback.print_exc()
 
-# FIXED: Better background task startup with error handling
-try:
-    print("🎬 Starting background task...")
-    socketio.start_background_task(target=game_loop_task)
-    print("✅ Background task started successfully!")
-except Exception as task_error:
-    print(f"❌ FAILED to start background task: {task_error}")
-    import traceback
-    traceback.print_exc()
+# Global flag to track if game loop is running
+game_loop_started = False
+
+def start_game_loop():
+    """Start the game loop background task"""
+    global game_loop_started
+    if game_loop_started:
+        print("🔄 Game loop already started, skipping...")
+        return True
+        
+    try:
+        print("🎬 Attempting to start background task...")
+        socketio.start_background_task(target=game_loop_task)
+        game_loop_started = True
+        print("✅ Background task started successfully!")
+        return True
+    except Exception as task_error:
+        print(f"❌ FAILED to start background task: {task_error}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 # Production configuration
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print(f"Server starting on port {port}...")
+    
+    # AGGRESSIVE: Try to start the game loop multiple times
+    print("🚀 AGGRESSIVE: Attempting to start game loop background task multiple ways...")
+    
+    # Method 1: Start before server
+    print("Method 1: Starting before server...")
+    start_game_loop()
+    
+    # Method 2: Start after a delay
+    def delayed_start():
+        import time
+        time.sleep(2)  # Wait for server to be ready
+        print("Method 2: Delayed start...")
+        start_game_loop()
+    
+    # Start the server
+    print("🎯 Starting SocketIO server...")
+    
+    # Start the delayed task
+    import threading
+    delayed_thread = threading.Thread(target=delayed_start)
+    delayed_thread.daemon = True
+    delayed_thread.start()
+    
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
