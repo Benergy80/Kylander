@@ -36,12 +36,12 @@ AI_SID_PLACEHOLDER = "AI_PLAYER_SID"
 
 # BALANCED: AI constants - reduced frequency for better gameplay
 AI_SPEED_MULTIPLIER = 0.4  # Slower AI movement for better positioning
-AI_PREFERRED_DISTANCE = 60  # AI stays closer for more clashes
+AI_PREFERRED_DISTANCE = 80  # AI stays closer for more clashes
 AI_DISTANCE_BUFFER = 15     # Smaller buffer zone for tighter combat
 AI_ATTACK_FREQUENCY = 0.25  # REDUCED: Less frequent attacks (was 0.45)
 AI_JUMP_FREQUENCY = 0.12    # REDUCED: Less jumping to stay in range
 AI_DUCK_FREQUENCY = 0.15    # REDUCED: Less ducking for more engagement
-AI_ATTACK_COOLDOWN_BONUS = 15  # Shorter cooldown for more action
+AI_ATTACK_COOLDOWN_BONUS = 30  # Longer cooldown for less action
 
 # GENEROUS: Clash detection for epic moments but not overwhelming
 CLASH_DETECTION_RANGE = 135  # Generous clash range
