@@ -26,7 +26,7 @@ CLASH_STUN_DURATION = 20  # INCREASED: Even longer stun for more dramatic effect
 KNOCKBACK_DISTANCE = 50   # INCREASED: Very noticeable knockback (was 30)
 MAX_WINS = 5; SPECIAL_LEVEL_WINS = 3 
 SLIDESHOW_DURATION_MS = 6000; VICTORY_SCREEN_DURATION_MS = 4000
-CONTROLS_SCREEN_DURATION_MS = 1000; CHURCH_INTRO_DURATION_MS = 4000
+CONTROLS_SCREEN_DURATION_MS = 1000; CHURCH_INTRO_DURATION_MS = 4000  # DEBUG: Changed to 100 for testing
 QUICKENING_FLASHES = 6; QUICKENING_FLASH_DURATION_MS = 100
 MAX_PLAYERS_PER_ROOM = 2
 
@@ -141,14 +141,19 @@ def reset_player_for_round(player_state, room_state):
         player_state['display_character_name'] = player_state['original_character_name']
 
 def initialize_round(room_state):
+    print("initialize_round called!")  # DEBUG
     cleanup_room_state(room_state)
     
     room_state.update({'round_winner_player_id': None, 'state_timer_ms': 0, 
                        'quickening_effect_active': False, 'dark_quickening_effect_active': False,
                        'sfx_event_for_client': None, 'swordeffects_playing': False})
-    for p_state in room_state['players'].values(): reset_player_for_round(p_state, room_state)
+    
+    print(f"Resetting {len(room_state['players'])} players")  # DEBUG
+    for p_state in room_state['players'].values(): 
+        reset_player_for_round(p_state, room_state)
     
     if room_state['special_level_active']:
+        print("Setting up special level background")  # DEBUG
         available_church_bgs = [i for i in range(CHURCH_BG_COUNT) if i not in room_state.get('used_special_bgs', [])]
         if not available_church_bgs: 
             room_state['used_special_bgs'] = []
@@ -157,8 +162,14 @@ def initialize_round(room_state):
         room_state.update({'current_background_key': 'church', 'current_background_index': chosen_church_idx})
         room_state.setdefault('used_special_bgs', []).append(chosen_church_idx)
     else:
-        room_state.update({'current_background_key': 'paris', 'current_background_index': (room_state.get('current_background_index', -1) + 1) % PARIS_BG_COUNT})
+        print("Setting up normal Paris background")  # DEBUG
+        old_bg_index = room_state.get('current_background_index', -1)
+        new_bg_index = (old_bg_index + 1) % PARIS_BG_COUNT
+        room_state.update({'current_background_key': 'paris', 'current_background_index': new_bg_index})
+        print(f"Background changed from {old_bg_index} to {new_bg_index}")  # DEBUG
+    
     room_state['current_screen'] = 'PLAYING'
+    print(f"Screen set to PLAYING! Room state: {room_state['current_screen']}")  # DEBUG
 
 def handle_round_victory(room_state, victor_player_id, loser_player_id):
     if room_state['current_screen'] not in ['PLAYING', 'SPECIAL']: 
@@ -345,10 +356,15 @@ def game_tick(room_state):
     if room_state.get('clash_flash_timer', 0) > 0:
         room_state['clash_flash_timer'] -= 1
 
+    # FIXED: Only handle timer once per frame
     if room_state['state_timer_ms'] > 0:
+        old_timer = room_state['state_timer_ms']
         room_state['state_timer_ms'] -= delta_s * 1000
+        print(f"Timer: {old_timer:.1f} -> {room_state['state_timer_ms']:.1f} (screen: {room_state['current_screen']})")  # DEBUG
+        
         if room_state['state_timer_ms'] <= 0:
             prev_screen_when_timer_expired = room_state['current_screen'] 
+            print(f"Timer expired! Processing screen: {prev_screen_when_timer_expired}")  # DEBUG
             
             if room_state['quickening_effect_active'] or room_state['dark_quickening_effect_active']:
                 room_state['quickening_effect_active'] = False; room_state['dark_quickening_effect_active'] = False
@@ -422,8 +438,11 @@ def game_tick(room_state):
                         room_state['available_victory_sfx_indices'].remove(sfx_idx)
                     else: room_state['victory_sfx_to_play_index'] = random.randint(0,4)
             
-            elif prev_screen_when_timer_expired == 'CONTROLS': initialize_round(room_state) 
-            elif prev_screen_when_timer_expired == 'CHURCH_INTRO': initialize_round(room_state) 
+            elif prev_screen_when_timer_expired == 'CONTROLS': 
+                print("CONTROLS timer expired - initializing round")  # DEBUG
+                initialize_round(room_state) 
+            elif prev_screen_when_timer_expired == 'CHURCH_INTRO': 
+                initialize_round(room_state) 
             # FIXED: Church victory timer handling - return to normal gameplay
             elif prev_screen_when_timer_expired == 'CHURCH_VICTORY':
                 # After church victory screen, return to normal gameplay (not special level)
@@ -818,6 +837,7 @@ def on_player_character_choice(data):
     if ready_for_controls:
         room['current_screen'] = 'CONTROLS'
         room['state_timer_ms'] = CONTROLS_SCREEN_DURATION_MS
+        print(f"Setting CONTROLS screen with timer: {CONTROLS_SCREEN_DURATION_MS}ms")  # DEBUG
     socketio.emit('update_room_state', room, room=game_room_id)
 
 @socketio.on('player_actions')
@@ -904,12 +924,17 @@ def handle_background_change(data):
 
 def game_loop_task():
     global last_broadcast_time
+    print("Game loop task starting...")  # DEBUG
+    loop_count = 0
     while True:
         room = game_sessions.get(game_room_id)
         if room: 
             current_time = time.time()
             # Only broadcast at 60 FPS max
             if current_time - last_broadcast_time >= BROADCAST_INTERVAL:
+                loop_count += 1
+                if loop_count % 60 == 0:  # Print every second
+                    print(f"Game loop running: {loop_count} ticks, screen: {room.get('current_screen', 'UNKNOWN')}, timer: {room.get('state_timer_ms', 0):.1f}")
                 game_tick(room)
                 last_broadcast_time = current_time
         socketio.sleep(1 / 120)  # Sleep for half the target FPS
