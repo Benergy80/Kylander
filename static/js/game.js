@@ -8,7 +8,7 @@ canvas.height = GAME_HEIGHT;
 
 // CHANGED: Sprite scale to 0.875
 const SPRITE_SCALE = 0.875; 
-const SERVER_ATTACK_DURATION = 40;  // INCREASED: Match server value (was 18)
+const SERVER_ATTACK_DURATION = 45;  // INCREASED: Match new server value (was 24)
 const WALK_ANIMATION_MS_PER_FRAME = 133; 
 const QUICKENING_FLASH_DURATION_MS_CLIENT = 100; 
 
@@ -67,6 +67,7 @@ const ASSET_PATHS = {
 
 const loadedAssets = { images: {}, sounds: {} };
 let assetsToLoad = 0, assetsLoaded = 0;
+// ENHANCED: Better animation state management
 const clientPlayerAnimationState = {};
 
 // FIXED: Track dark quickening alternative
@@ -360,7 +361,7 @@ function drawTopPlayerUI(playerState, x, y, isRightAligned = false) {
     ctx.textAlign = 'left'; 
 }
 
-// FIXED: Added SPECIAL_END state handling
+// ENHANCED: Playing screen with better animation handling
 function drawPlayingScreen() {
     // IMPROVED: Special level screen handling
     const bgCategory = roomState.special_level_active ? 'church' : (roomState.current_background_key || 'paris');
@@ -399,6 +400,7 @@ function drawPlayingScreen() {
     }
     fightersToDraw.sort((a, b) => a.y - b.y);
 
+    // ENHANCED: Improved animation handling for fighters
     fightersToDraw.forEach(player => {
         const charKey = player.character_name; 
         const charDataClient = ASSET_PATHS.characters[charKey];
@@ -408,11 +410,37 @@ function drawPlayingScreen() {
         let frameIndex = 0; 
         
         if (!clientPlayerAnimationState[player.id]) {
-            clientPlayerAnimationState[player.id] = { walk_frame: 0, walk_timer: 0 };
+            clientPlayerAnimationState[player.id] = { 
+                walk_frame: 0, 
+                walk_timer: 0,
+                last_animation: 'idle',  // Track previous animation
+                animation_changed_time: Date.now(),
+                idle_timer: 0  // Track how long we've been idle
+            };
         }
         const animState = clientPlayerAnimationState[player.id];
 
-        // IMPROVED: Better animation frame synchronization
+        // ENHANCED: Better animation state management
+        const currentServerAnimation = player.current_animation || 'idle';
+        
+        // Track animation changes
+        if (animState.last_animation !== currentServerAnimation) {
+            animState.last_animation = currentServerAnimation;
+            animState.animation_changed_time = Date.now();
+            
+            // Reset walk frame when switching to walk
+            if (currentServerAnimation === 'walk') {
+                animState.walk_frame = 0;
+                animState.walk_timer = Date.now();
+            }
+            
+            // Reset idle timer when switching to idle
+            if (currentServerAnimation === 'idle') {
+                animState.idle_timer = Date.now();
+            }
+        }
+
+        // ENHANCED: Animation priority and state handling with knockback effects
         if (player.is_attacking) {
             if (player.is_jumping) {
                 // JUMP ATTACK - use jump_attack sprite
@@ -429,16 +457,29 @@ function drawPlayingScreen() {
             currentImageKey = `char_${charKey}_jump`;
         } else if (player.is_ducking) {
             currentImageKey = `char_${charKey}_duck`;
-        } else if (player.current_animation === 'walk') {
+        } else if (currentServerAnimation === 'walk') {
+            // ENHANCED: More reliable walk animation with anti-flicker
             const numWalkFrames = charDataClient.num_walk;
-            if (Date.now() - animState.walk_timer > WALK_ANIMATION_MS_PER_FRAME) {
-                animState.walk_frame = (animState.walk_frame + 1) % numWalkFrames;
-                animState.walk_timer = Date.now();
+            const walkAnimSpeed = WALK_ANIMATION_MS_PER_FRAME;
+            
+            // Only animate if we've been walking for a bit (prevents single-frame flickers)
+            const walkDuration = Date.now() - animState.animation_changed_time;
+            if (walkDuration > 50) {  // 50ms minimum before starting walk animation
+                if (Date.now() - animState.walk_timer > walkAnimSpeed) {
+                    animState.walk_frame = (animState.walk_frame + 1) % numWalkFrames;
+                    animState.walk_timer = Date.now();
+                }
+                frameIndex = animState.walk_frame;
+                currentImageKey = `char_${charKey}_walk_${frameIndex}`;
+            } else {
+                // Still in the brief period after starting to walk, show idle
+                currentImageKey = `char_${charKey}_idle`;
             }
-            frameIndex = animState.walk_frame;
-            currentImageKey = `char_${charKey}_walk_${frameIndex}`;
         } else { 
+            // DEFAULT: Use idle animation
             currentImageKey = `char_${charKey}_idle`; 
+            // Reset walk animation state when not walking
+            animState.walk_frame = 0;
         }
 
         const currentImage = loadedAssets.images[currentImageKey] || loadedAssets.images[`char_${charKey}_idle`];
@@ -450,20 +491,46 @@ function drawPlayingScreen() {
             const drawX = player.x - scaledWidth / 2;
             const drawY = player.y - scaledHeight; 
 
+            // ENHANCED: Add knockback visual effect with screen shake
+            let finalDrawX = drawX;
+            let finalDrawY = drawY;
+            
+            // Add dramatic shake effect during knockback
+            if (player.knockback_timer > 0) {
+                const shakeIntensity = Math.min(8, player.knockback_timer / 3);  // INCREASED shake
+                finalDrawX += (Math.random() - 0.5) * shakeIntensity * 2;
+                finalDrawY += (Math.random() - 0.5) * shakeIntensity;
+                
+                // Add slight red tint during knockback
+                ctx.save();
+                ctx.globalCompositeOperation = 'multiply';
+                ctx.fillStyle = 'rgba(255, 200, 200, 0.3)';
+                ctx.fillRect(finalDrawX, finalDrawY, scaledWidth, scaledHeight);
+                ctx.restore();
+            }
+
             if (player.facing === -1) {
                 ctx.save(); 
                 ctx.scale(-1, 1);
-                ctx.drawImage(currentImage, -drawX - scaledWidth, drawY, scaledWidth, scaledHeight);
+                ctx.drawImage(currentImage, -finalDrawX - scaledWidth, finalDrawY, scaledWidth, scaledHeight);
                 ctx.restore();
             } else {
-                ctx.drawImage(currentImage, drawX, drawY, scaledWidth, scaledHeight);
+                ctx.drawImage(currentImage, finalDrawX, finalDrawY, scaledWidth, scaledHeight);
+            }
+            
+            // DEBUG: Show animation state (set to true for debugging)
+            if (false) {
+                ctx.fillStyle = 'yellow';
+                ctx.font = '12px Arial';
+                ctx.fillText(`${currentServerAnimation} (${currentImageKey})`, player.x - 50, player.y - scaledHeight - 10);
+                ctx.fillText(`KB: ${player.knockback_timer || 0}`, player.x - 30, player.y - scaledHeight + 5);
             }
         } else { 
-            if(charKey && ASSET_PATHS.characters[charKey]) console.warn("Missing image for key:", currentImageKey); 
+            console.warn("Missing image for key:", currentImageKey); 
         }
     });
     
-    // FIXED: Handle both quickening and dark quickening effects
+    // ENHANCED: Handle both quickening and dark quickening effects with more drama
     if (roomState.quickening_effect_active || roomState.dark_quickening_effect_active) {
         if (Math.floor(Date.now() / (QUICKENING_FLASH_DURATION_MS_CLIENT / 2)) % 2 === 0) { 
             // Full screen inversion
@@ -478,18 +545,30 @@ function drawPlayingScreen() {
             const effectImg = loadedAssets.images[effectImgKey];
             if (effectImg) {
                 ctx.save();
-                ctx.globalAlpha = 0.7; // Make overlay partially transparent
+                ctx.globalAlpha = roomState.dark_quickening_effect_active ? 0.8 : 0.7; // Dark quickening more visible
                 ctx.drawImage(effectImg, 0, 0, GAME_WIDTH, GAME_HEIGHT);
                 ctx.restore();
             }
         }
     }
     
-    // NEW: Handle clash flash effect for dramatic knockback
+    // ENHANCED: Handle clash flash effect for dramatic knockback with multiple colors
     if (roomState.clash_flash_timer > 0) {
         ctx.save();
-        ctx.fillStyle = 'white';
-        ctx.globalAlpha = 0.3 * (roomState.clash_flash_timer / 5); // Fade out effect
+        
+        // Cycle through colors for more dramatic effect
+        const flashPhase = roomState.clash_flash_timer % 4;
+        if (flashPhase === 0) {
+            ctx.fillStyle = 'white';
+        } else if (flashPhase === 1) {
+            ctx.fillStyle = 'cyan';
+        } else if (flashPhase === 2) {
+            ctx.fillStyle = 'yellow';
+        } else {
+            ctx.fillStyle = 'white';
+        }
+        
+        ctx.globalAlpha = 0.4 * (roomState.clash_flash_timer / 12); // Fade out effect
         ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
         ctx.restore();
     }
@@ -703,10 +782,17 @@ function drawSlideshowScreen() {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0; ctx.textAlign='left';
 }
 
+// ENHANCED: Better animation cleanup with reset logic
 function cleanupAnimationStates() {
     Object.keys(clientPlayerAnimationState).forEach(playerId => {
         if (clientPlayerAnimationState[playerId]) {
-            clientPlayerAnimationState[playerId] = { walk_frame: 0, walk_timer: 0 };
+            clientPlayerAnimationState[playerId] = { 
+                walk_frame: 0, 
+                walk_timer: 0,
+                last_animation: 'idle',
+                animation_changed_time: Date.now(),
+                idle_timer: 0
+            };
         }
     });
 }
@@ -1006,6 +1092,7 @@ function handleKeyUp(e) {
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
 
+// ENHANCED: Better input handling to prevent stuck animations
 function sendPlayerActions() {
     if (!['PLAYING', 'SPECIAL'].includes(roomState.current_screen) || !localPlayerId || !roomState.players || !socket.connected) return;
     const myClientPlayerObject = Object.values(roomState.players).find(p => p.sid === socket.id);
@@ -1023,19 +1110,42 @@ function sendPlayerActions() {
         pControls = { left: 'arrowleft', right: 'arrowright', jump: 'arrowup', duck: 'arrowdown', attack: ['enter'] };
     }
 
-    if (keysPressed[pControls.left]) actions.push({ type: 'move', direction: 'left' });
-    if (keysPressed[pControls.right]) actions.push({ type: 'move', direction: 'right' });
-    if (keysPressed[pControls.jump]) actions.push({ type: 'jump' }); 
+    // Track if player is actually moving this frame
+    let isMoving = false;
+    
+    if (keysPressed[pControls.left]) {
+        actions.push({ type: 'move', direction: 'left' });
+        isMoving = true;
+    }
+    if (keysPressed[pControls.right]) {
+        actions.push({ type: 'move', direction: 'right' });
+        isMoving = true;
+    }
+    if (keysPressed[pControls.jump]) {
+        actions.push({ type: 'jump' });
+    }
     
     let currentDuckStateClient = keysPressed[pControls.duck] || false;
-    if (currentDuckStateClient && !myClientPlayerObject.is_ducking) actions.push({ type: 'duck', active: true });
+    if (currentDuckStateClient && !myClientPlayerObject.is_ducking) {
+        actions.push({ type: 'duck', active: true });
+    }
     
     let attackKeyDown = pControls.attack.some(key => keysPressed[key]);
     if (attackKeyDown && !myClientPlayerObject.is_attacking && myClientPlayerObject.cooldown_timer === 0) {
         actions.push({ type: 'attack' });
-        // Let server handle all attack sounds for consistency
     }
-    if (actions.length > 0) socket.emit('player_actions', { actions: actions });
+    
+    // ENHANCED: Send "stop moving" action when no movement keys are pressed
+    // This helps the server properly reset animation states
+    if (!isMoving && !myClientPlayerObject.is_attacking && !myClientPlayerObject.is_jumping && 
+        !myClientPlayerObject.is_ducking && myClientPlayerObject.current_animation === 'walk') {
+        // Add a special "stop" action to help server reset animation
+        actions.push({ type: 'stop_moving' });
+    }
+    
+    if (actions.length > 0) {
+        socket.emit('player_actions', { actions: actions });
+    }
 }
 
 function enableAudioContext() {
