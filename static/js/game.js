@@ -8,7 +8,7 @@ canvas.height = GAME_HEIGHT;
 
 // CHANGED: Sprite scale to 0.875
 const SPRITE_SCALE = 0.875; 
-const SERVER_ATTACK_DURATION = 24;  // INCREASED: Match server value (was 18)
+const SERVER_ATTACK_DURATION = 40;  // INCREASED: Match server value (was 18)
 const WALK_ANIMATION_MS_PER_FRAME = 133; 
 const QUICKENING_FLASH_DURATION_MS_CLIENT = 100; 
 
