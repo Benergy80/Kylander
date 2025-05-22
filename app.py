@@ -349,7 +349,10 @@ def update_ai(ai_state, target_state, room_state):
 
 def game_tick(room_state):
     try:
-        print(f"🔄 game_tick called: screen={room_state.get('current_screen', 'UNKNOWN')}, timer={room_state.get('state_timer_ms', 0):.1f}")
+        # ALWAYS print this to verify game_tick is being called
+        current_screen = room_state.get('current_screen', 'UNKNOWN')
+        timer_val = room_state.get('state_timer_ms', 0)
+        print(f"🔄 game_tick: screen={current_screen}, timer={timer_val:.1f}")
         
         current_time_s = time.time()
         delta_s = current_time_s - room_state['last_update_time']
@@ -369,7 +372,7 @@ def game_tick(room_state):
         if room_state['state_timer_ms'] > 0:
             old_timer = room_state['state_timer_ms']
             room_state['state_timer_ms'] -= delta_s * 1000
-            print(f"⏰ Timer: {old_timer:.1f} -> {room_state['state_timer_ms']:.1f} (screen: {room_state['current_screen']}, delta: {delta_s:.3f})")
+            print(f"⏰ Timer: {old_timer:.1f} -> {room_state['state_timer_ms']:.1f} (delta: {delta_s:.3f})")
             
             if room_state['state_timer_ms'] <= 0:
                 prev_screen_when_timer_expired = room_state['current_screen'] 
@@ -449,11 +452,22 @@ def game_tick(room_state):
                 
                 elif prev_screen_when_timer_expired == 'CONTROLS': 
                     print("🎯 CONTROLS timer expired - calling initialize_round!")
-                    initialize_round(room_state) 
-                    print(f"✅ initialize_round completed! New screen: {room_state['current_screen']}")
+                    try:
+                        initialize_round(room_state) 
+                        print(f"✅ initialize_round completed! New screen: {room_state['current_screen']}")
+                    except Exception as init_error:
+                        print(f"❌ ERROR in initialize_round: {init_error}")
+                        import traceback
+                        traceback.print_exc()
                 elif prev_screen_when_timer_expired == 'CHURCH_INTRO': 
-                    print("Church intro expired - calling initialize_round!")
-                    initialize_round(room_state) 
+                    print("🎯 Church intro expired - calling initialize_round!")
+                    try:
+                        initialize_round(room_state)
+                        print(f"✅ Church intro initialize_round completed! New screen: {room_state['current_screen']}")
+                    except Exception as init_error:
+                        print(f"❌ ERROR in church intro initialize_round: {init_error}")
+                        import traceback
+                        traceback.print_exc() 
                 # FIXED: Church victory timer handling - return to normal gameplay
                 elif prev_screen_when_timer_expired == 'CHURCH_VICTORY':
                     # After church victory screen, return to normal gameplay (not special level)
@@ -672,8 +686,9 @@ def game_tick(room_state):
                 elif not (p1['is_attacking'] and p2['is_attacking']):
                     room_state['swordeffects_playing'] = False
         
-        print(f"🔄 game_tick completed, emitting update")
+        # Always emit the room state update
         socketio.emit('update_room_state', room_state, room=game_room_id)
+        print(f"✅ game_tick completed and broadcasted")
         
     except Exception as e:
         print(f"❌ EXCEPTION in game_tick: {e}")
@@ -682,6 +697,29 @@ def game_tick(room_state):
 
 @app.route('/')
 def index(): return render_template('index.html')
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint to verify server is running"""
+    room = game_sessions.get(game_room_id)
+    return {
+        'status': 'ok',
+        'room_exists': room is not None,
+        'current_screen': room.get('current_screen', 'unknown') if room else 'no_room',
+        'players_count': len(room.get('players', {})) if room else 0,
+        'timestamp': time.time()
+    }
+
+@app.route('/start_game_loop')
+def start_game_loop():
+    """Manual trigger to start game loop if it's not running"""
+    try:
+        print("🔧 Manual game loop start triggered!")
+        socketio.start_background_task(target=game_loop_task)
+        return {'status': 'game_loop_started', 'timestamp': time.time()}
+    except Exception as e:
+        print(f"❌ Failed to start game loop manually: {e}")
+        return {'status': 'error', 'error': str(e), 'timestamp': time.time()}
 
 @socketio.on('connect')
 def handle_connect():
@@ -945,39 +983,53 @@ def game_loop_task():
     print("🚀 GAME LOOP TASK STARTING!")  # Double print to make it obvious
     loop_count = 0
     
-    while True:
-        try:
-            loop_count += 1
-            room = game_sessions.get(game_room_id)
-            
-            # Debug: Print every 60 loops (about once per second)
-            if loop_count % 60 == 0:
-                if room:
-                    print(f"🎮 Loop {loop_count}: Screen={room.get('current_screen', 'UNKNOWN')}, Timer={room.get('state_timer_ms', 0):.1f}, Players={len(room.get('players', {}))}")
-                else:
-                    print(f"🎮 Loop {loop_count}: NO ROOM FOUND!")
-            
-            if room: 
-                current_time = time.time()
-                # Only broadcast at 60 FPS max
-                if current_time - last_broadcast_time >= BROADCAST_INTERVAL:
-                    try:
-                        game_tick(room)
-                        last_broadcast_time = current_time
-                    except Exception as tick_error:
-                        print(f"❌ ERROR in game_tick: {tick_error}")
-                        import traceback
-                        traceback.print_exc()
-            
-            socketio.sleep(1 / 120)  # Sleep for half the target FPS
-            
-        except Exception as loop_error:
-            print(f"❌ ERROR in game loop: {loop_error}")
-            import traceback
-            traceback.print_exc()
-            socketio.sleep(1)  # Wait before retrying
+    try:
+        while True:
+            try:
+                loop_count += 1
+                room = game_sessions.get(game_room_id)
+                
+                # Debug: Print every 60 loops (about once per second)
+                if loop_count % 60 == 0:
+                    if room:
+                        print(f"🎮 Loop {loop_count}: Screen={room.get('current_screen', 'UNKNOWN')}, Timer={room.get('state_timer_ms', 0):.1f}, Players={len(room.get('players', {}))}")
+                    else:
+                        print(f"🎮 Loop {loop_count}: NO ROOM FOUND!")
+                
+                if room: 
+                    current_time = time.time()
+                    # Only broadcast at 60 FPS max
+                    if current_time - last_broadcast_time >= BROADCAST_INTERVAL:
+                        try:
+                            game_tick(room)
+                            last_broadcast_time = current_time
+                        except Exception as tick_error:
+                            print(f"❌ ERROR in game_tick: {tick_error}")
+                            import traceback
+                            traceback.print_exc()
+                
+                socketio.sleep(1 / 120)  # Sleep for half the target FPS
+                
+            except Exception as loop_error:
+                print(f"❌ ERROR in game loop: {loop_error}")
+                import traceback
+                traceback.print_exc()
+                socketio.sleep(1)  # Wait before retrying
+                
+    except Exception as fatal_error:
+        print(f"💀 FATAL ERROR in game_loop_task: {fatal_error}")
+        import traceback
+        traceback.print_exc()
 
-socketio.start_background_task(target=game_loop_task)
+# FIXED: Better background task startup with error handling
+try:
+    print("🎬 Starting background task...")
+    socketio.start_background_task(target=game_loop_task)
+    print("✅ Background task started successfully!")
+except Exception as task_error:
+    print(f"❌ FAILED to start background task: {task_error}")
+    import traceback
+    traceback.print_exc()
 
 # Production configuration
 if __name__ == '__main__':
