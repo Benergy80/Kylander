@@ -21,8 +21,8 @@ PLAYER_JUMP_VELOCITY = -15; GRAVITY = 1
 PLAYER_ATTACK_RANGE = 85  # INCREASED: More generous attack range
 PLAYER_SPRITE_HALF_WIDTH = 35 
 ATTACK_DURATION = 24      # Animation duration for attacks
-ATTACK_COOLDOWN = 20 
-CLASH_STUN_DURATION = 30  # UPDATED: Longer stun for more dramatic effect
+ATTACK_COOLDOWN = 15      # UPDATED: Shorter cooldown for human players (was 20)
+CLASH_STUN_DURATION = 30  # Longer stun for more dramatic effect
 KNOCKBACK_DISTANCE = 50   # INCREASED: Very noticeable knockback
 MAX_WINS = 5; SPECIAL_LEVEL_WINS = 3 
 SLIDESHOW_DURATION_MS = 6000; VICTORY_SCREEN_DURATION_MS = 4000
@@ -36,12 +36,12 @@ AI_SID_PLACEHOLDER = "AI_PLAYER_SID"
 
 # UPDATED: Balanced AI constants with new values
 AI_SPEED_MULTIPLIER = 0.6  # Movement speed multiplier
-AI_PREFERRED_DISTANCE = 70  # Optimal fighting distance
-AI_DISTANCE_BUFFER = 30     # UPDATED: Distance tolerance (was 25)
-AI_ATTACK_FREQUENCY = 0.3   # UPDATED: Attack frequency (was 0.35)
-AI_JUMP_FREQUENCY = 0.3     # UPDATED: Much more frequent jumping (was 0.05)
-AI_DUCK_FREQUENCY = 0.2     # UPDATED: More frequent ducking (was 0.10)
-AI_ATTACK_COOLDOWN_BONUS = 30  # UPDATED: Even longer cooldown (was 20)
+AI_PREFERRED_DISTANCE = 100  # UPDATED: Even further optimal fighting distance (was 85)
+AI_DISTANCE_BUFFER = 30     # Distance tolerance
+AI_ATTACK_FREQUENCY = 0.22  # Less frequent attacks
+AI_JUMP_FREQUENCY = 0.15    # UPDATED: Reduced jumping frequency (was 0.3)
+AI_DUCK_FREQUENCY = 0.2     # More frequent ducking
+AI_ATTACK_COOLDOWN_BONUS = 45  # Much longer AI cooldown
 
 game_sessions = {}; game_room_id = 'default_room' 
 
@@ -119,6 +119,15 @@ def cleanup_room_state(room_state):
             del player_state['_temp_animation_data']
         # Reset knockback
         player_state['knockback_timer'] = 0
+        
+        # FIXED: Additional safeguards to prevent getting stuck in states
+        # If player is somehow ducking while jumping or attacking, reset ducking
+        if player_state.get('is_ducking') and (player_state.get('is_jumping') or player_state.get('is_attacking')):
+            print(f"CLEANUP: Resetting stuck ducking state for {player_state.get('id', 'unknown')}")
+            player_state['is_ducking'] = False
+            if not player_state.get('is_jumping') and not player_state.get('is_attacking'):
+                player_state['current_animation'] = 'idle'
+    
     room_state['sfx_event_for_client'] = None
     room_state['swordeffects_playing'] = False
     room_state['clash_flash_timer'] = 0  # Reset clash flash effect
@@ -238,6 +247,10 @@ def update_player_physics_and_timers(player_state):
                 player_state.update({'y': GROUND_LEVEL, 'is_jumping': False, 'vertical_velocity': 0})
         return  # Don't process any other movement during knockback
     
+    # FIXED: Reset ducking when jumping or attacking (prevents getting stuck)
+    if player_state['is_jumping'] or player_state['is_attacking']:
+        player_state['is_ducking'] = False
+    
     if player_state['is_jumping']:
         player_state['y'] += player_state['vertical_velocity']; player_state['vertical_velocity'] += GRAVITY
         if player_state['y'] >= GROUND_LEVEL:
@@ -258,7 +271,7 @@ def apply_screen_wrap(player_state):
     elif player_state['x'] < -PLAYER_SPRITE_HALF_WIDTH: player_state['x'] = GAME_WIDTH + PLAYER_SPRITE_HALF_WIDTH -1
 
 def update_ai(ai_state, target_state, room_state):
-    """Balanced AI behavior with updated frequencies and positioning"""
+    """Balanced AI behavior with updated frequencies and positioning - less aggressive, more defensive"""
     if not ai_state or not target_state or ai_state['health'] <= 0: return
     update_player_physics_and_timers(ai_state)
     
@@ -282,8 +295,8 @@ def update_ai(ai_state, target_state, room_state):
         if not ai_state['is_attacking'] and not ai_state['is_jumping']:
             ai_state['current_animation'] = 'idle'
     
-    # UPDATED: Attack frequency and cooldown
-    attack_frequency = AI_ATTACK_FREQUENCY
+    # UPDATED: Less aggressive attack frequency and longer optimal distance
+    attack_frequency = AI_ATTACK_FREQUENCY  # 0.22 - more conservative than before
     if room_state.get('special_level_active') and ai_state.get('display_character_name') == 'Darichris':
         attack_frequency = 0.55  # Still more than normal but not too aggressive
     
@@ -291,17 +304,17 @@ def update_ai(ai_state, target_state, room_state):
     if (not ai_state['is_attacking'] and ai_state['cooldown_timer'] == 0 and 
         not ai_state['is_ducking'] and 
         distance >= AI_PREFERRED_DISTANCE - AI_DISTANCE_BUFFER and
-        distance <= PLAYER_ATTACK_RANGE + 15):  # More generous attack range
+        distance <= PLAYER_ATTACK_RANGE + 20):  # UPDATED: Slightly more generous attack range
         if random.random() < attack_frequency:
             ai_state.update({
                 'is_attacking': True, 
                 'attack_timer': ATTACK_DURATION,
                 'current_animation': 'jump_attack' if ai_state['is_jumping'] else 'attack',
                 'has_hit_this_attack': False,
-                'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS  # UPDATED: Even longer cooldown
+                'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS  # UPDATED: Much longer AI cooldown (15 + 45 = 60)
             })
     
-    # BALANCED: Movement behavior with updated distance buffer
+    # BALANCED: Movement behavior with updated distance buffer (now prefers 100 distance vs 85)
     if not ai_state['is_attacking'] and not ai_state['is_ducking']:
         # Move 70% of the time
         if random.random() >= 0.3:
@@ -334,10 +347,10 @@ def update_ai(ai_state, target_state, room_state):
                     ai_state['current_animation'] = 'idle'
                 ai_state['facing'] = 1 if dx > 0 else -1
     
-    # UPDATED: Much more frequent jumping for more dynamic gameplay
+    # UPDATED: More conservative jumping for less erratic AI behavior
     if (not ai_state['is_jumping'] and not ai_state['is_ducking'] and 
         random.random() < AI_JUMP_FREQUENCY):
-        if current_time_s - ai_state.get('_ai_last_jump_time', 0) > 2.0:  # Reduced cooldown
+        if current_time_s - ai_state.get('_ai_last_jump_time', 0) > 3.0:  # Increased cooldown for less jumping
             ai_state.update({
                 'is_jumping': True,
                 'vertical_velocity': PLAYER_JUMP_VELOCITY,
@@ -961,23 +974,33 @@ def handle_player_actions(data):
         elif action_type == 'jump':
             if not player['is_jumping'] and not player['is_ducking'] and not player['is_attacking']:
                 player['is_jumping'] = True; player['vertical_velocity'] = PLAYER_JUMP_VELOCITY
-                player['current_animation'] = 'jump'; player['is_ducking'] = False 
+                player['current_animation'] = 'jump'; player['is_ducking'] = False  # FIXED: Explicitly reset ducking
                 action_taken = True
         elif action_type == 'duck':
             is_ducking_cmd = action_data.get('active', False)
             if not player['is_jumping'] and not player['is_attacking']:
-                if player['is_ducking'] != is_ducking_cmd: 
-                    player['is_ducking'] = is_ducking_cmd
+                # FIXED: More explicit ducking state management
+                old_ducking_state = player['is_ducking']
+                player['is_ducking'] = is_ducking_cmd
+                if old_ducking_state != is_ducking_cmd:
                     player['current_animation'] = 'duck' if is_ducking_cmd else 'idle'
                     action_taken = True
+                    print(f"Player {player['id']} ducking state changed: {old_ducking_state} -> {is_ducking_cmd}")
         elif action_type == 'attack':
             if not player['is_attacking'] and player['cooldown_timer'] == 0 and not player['is_ducking']:
                 player['is_attacking'] = True; player['attack_timer'] = ATTACK_DURATION
                 player['current_animation'] = 'jump_attack' if player['is_jumping'] else 'attack'
-                player['has_hit_this_attack'] = False; action_taken = True
+                player['has_hit_this_attack'] = False; player['is_ducking'] = False  # FIXED: Explicitly reset ducking
+                action_taken = True
+    # FIXED: Final safety check - if no action taken and in a weird state, reset to idle
     if not action_taken and not player['is_jumping'] and not player['is_attacking'] and \
        not player['is_ducking'] and player['current_animation'] not in ['idle', 'jump', 'duck', 'attack', 'jump_attack']:
         player['current_animation'] = 'idle'
+    
+    # ADDITIONAL SAFETY: Reset animation if state doesn't match
+    if not player['is_ducking'] and player['current_animation'] == 'duck':
+        print(f"SAFETY: Resetting duck animation for {player['id']} (not ducking but animation stuck)")
+        player['current_animation'] = 'idle' if not player['is_jumping'] and not player['is_attacking'] else player['current_animation']
 
 # IMPROVED: Background change functionality
 @socketio.on('change_background')
