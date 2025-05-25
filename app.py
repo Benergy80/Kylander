@@ -20,10 +20,10 @@ PLAYER_SPEED = 10
 PLAYER_JUMP_VELOCITY = -15; GRAVITY = 1
 PLAYER_ATTACK_RANGE = 85  # INCREASED: More generous attack range
 PLAYER_SPRITE_HALF_WIDTH = 35 
-ATTACK_DURATION = 24      # INCREASED: Longer attacks for easier blocking (was 18)
+ATTACK_DURATION = 24      # Animation duration for attacks
 ATTACK_COOLDOWN = 20 
-CLASH_STUN_DURATION = 20  # INCREASED: Even longer stun for more dramatic effect (was 15)
-KNOCKBACK_DISTANCE = 50   # INCREASED: Very noticeable knockback (was 30)
+CLASH_STUN_DURATION = 30  # UPDATED: Longer stun for more dramatic effect
+KNOCKBACK_DISTANCE = 50   # INCREASED: Very noticeable knockback
 MAX_WINS = 5; SPECIAL_LEVEL_WINS = 3 
 SLIDESHOW_DURATION_MS = 6000; VICTORY_SCREEN_DURATION_MS = 4000
 CONTROLS_SCREEN_DURATION_MS = 1000; CHURCH_INTRO_DURATION_MS = 4000
@@ -34,14 +34,14 @@ PARIS_BG_COUNT = 7; CHURCH_BG_COUNT = 3; VICTORY_BG_COUNT = 10; SLIDESHOW_COUNT 
 CHARACTER_NAMES = ["The Potzer", "The Kylander", "Darichris"]
 AI_SID_PLACEHOLDER = "AI_PLAYER_SID" 
 
-# FIXED: Balanced AI constants - keep movement speed but reduce attack frequency
-AI_SPEED_MULTIPLIER = 0.6  # RESTORED: Back to original speed
-AI_PREFERRED_DISTANCE = 70  # ADJUSTED: Slightly increased (was 65)
-AI_DISTANCE_BUFFER = 25     # RESTORED: Back to original (was 25)
-AI_ATTACK_FREQUENCY = 0.35  # DECREASED: Even less frequent attacks (was 0.65)
-AI_JUMP_FREQUENCY = 0.05    # RESTORED: Back to original (was 0.06)
-AI_DUCK_FREQUENCY = 0.10    # RESTORED: Back to original (was 0.12)
-AI_ATTACK_COOLDOWN_BONUS = 20  # INCREASED: Even longer cooldown (was 5)
+# UPDATED: Balanced AI constants with new values
+AI_SPEED_MULTIPLIER = 0.6  # Movement speed multiplier
+AI_PREFERRED_DISTANCE = 70  # Optimal fighting distance
+AI_DISTANCE_BUFFER = 30     # UPDATED: Distance tolerance (was 25)
+AI_ATTACK_FREQUENCY = 0.3   # UPDATED: Attack frequency (was 0.35)
+AI_JUMP_FREQUENCY = 0.3     # UPDATED: Much more frequent jumping (was 0.05)
+AI_DUCK_FREQUENCY = 0.2     # UPDATED: More frequent ducking (was 0.10)
+AI_ATTACK_COOLDOWN_BONUS = 30  # UPDATED: Even longer cooldown (was 20)
 
 game_sessions = {}; game_room_id = 'default_room' 
 
@@ -258,7 +258,7 @@ def apply_screen_wrap(player_state):
     elif player_state['x'] < -PLAYER_SPRITE_HALF_WIDTH: player_state['x'] = GAME_WIDTH + PLAYER_SPRITE_HALF_WIDTH -1
 
 def update_ai(ai_state, target_state, room_state):
-    """Balanced AI behavior with proper positioning"""
+    """Balanced AI behavior with updated frequencies and positioning"""
     if not ai_state or not target_state or ai_state['health'] <= 0: return
     update_player_physics_and_timers(ai_state)
     
@@ -271,10 +271,10 @@ def update_ai(ai_state, target_state, room_state):
     distance = abs(dx)
     current_time_s = time.time()
     
-    # FIXED: More selective ducking - only when actually threatened
+    # UPDATED: More frequent ducking when threatened
     if (target_state['is_attacking'] and distance < PLAYER_ATTACK_RANGE + 40 and 
         not ai_state['is_jumping'] and random.random() < AI_DUCK_FREQUENCY):
-        if current_time_s - ai_state.get('_ai_last_duck_time', 0) > 2.5:  # INCREASED cooldown
+        if current_time_s - ai_state.get('_ai_last_duck_time', 0) > 2.0:  # Slightly reduced cooldown
             ai_state.update({'is_ducking': True, 'current_animation': 'duck'})
             ai_state['_ai_last_duck_time'] = current_time_s
     elif ai_state['is_ducking']:
@@ -282,7 +282,7 @@ def update_ai(ai_state, target_state, room_state):
         if not ai_state['is_attacking'] and not ai_state['is_jumping']:
             ai_state['current_animation'] = 'idle'
     
-    # EASIER: Much less frequent attacks with longer cooldowns
+    # UPDATED: Attack frequency and cooldown
     attack_frequency = AI_ATTACK_FREQUENCY
     if room_state.get('special_level_active') and ai_state.get('display_character_name') == 'Darichris':
         attack_frequency = 0.55  # Still more than normal but not too aggressive
@@ -298,14 +298,14 @@ def update_ai(ai_state, target_state, room_state):
                 'attack_timer': ATTACK_DURATION,
                 'current_animation': 'jump_attack' if ai_state['is_jumping'] else 'attack',
                 'has_hit_this_attack': False,
-                'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS  # Much longer cooldown
+                'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS  # UPDATED: Even longer cooldown
             })
     
-    # BALANCED: Restore original movement frequency
+    # BALANCED: Movement behavior with updated distance buffer
     if not ai_state['is_attacking'] and not ai_state['is_ducking']:
-        # Move 70% of the time (restored from original)
+        # Move 70% of the time
         if random.random() >= 0.3:
-            # Keep optimal fighting distance
+            # Keep optimal fighting distance with updated buffer
             if distance > AI_PREFERRED_DISTANCE + AI_DISTANCE_BUFFER:
                 # Move closer
                 move_speed = int(PLAYER_SPEED * AI_SPEED_MULTIPLIER)
@@ -334,10 +334,10 @@ def update_ai(ai_state, target_state, room_state):
                     ai_state['current_animation'] = 'idle'
                 ai_state['facing'] = 1 if dx > 0 else -1
     
-    # LESS JUMPING: More grounded AI
+    # UPDATED: Much more frequent jumping for more dynamic gameplay
     if (not ai_state['is_jumping'] and not ai_state['is_ducking'] and 
         random.random() < AI_JUMP_FREQUENCY):
-        if current_time_s - ai_state.get('_ai_last_jump_time', 0) > 4.0:  # INCREASED cooldown
+        if current_time_s - ai_state.get('_ai_last_jump_time', 0) > 2.0:  # Reduced cooldown
             ai_state.update({
                 'is_jumping': True,
                 'vertical_velocity': PLAYER_JUMP_VELOCITY,
@@ -590,9 +590,9 @@ def game_tick(room_state):
                         
                         print(f"STRONG KNOCKBACK! P1: {old_p1_x} -> {p1['x']}, P2: {old_p2_x} -> {p2['x']}")
                         
-                        # Longer knockback timers for more noticeable effect
-                        p1['knockback_timer'] = 30  # INCREASED: (was 25)
-                        p2['knockback_timer'] = 30  # INCREASED: (was 25)
+                        # UPDATED: Longer knockback timers for more noticeable effect
+                        p1['knockback_timer'] = 35  # INCREASED
+                        p2['knockback_timer'] = 35  # INCREASED
                         
                         # More dramatic vertical bounce
                         if not p1['is_jumping']:
@@ -624,29 +624,39 @@ def game_tick(room_state):
                         else:  # Facing left
                             attack_x = p1_center_x - ATTACK_RANGE_EXTENSION
                         
-                        # Check if attack hit p2 (not ducking)
-                        if abs(attack_x - p2_center_x) < HIT_BOX_WIDTH and \
-                           abs(p1_center_y - p2_center_y) < VERTICAL_CLASH_TOLERANCE and \
-                           not p2['is_ducking']:
-                            p2['health'] -= 10; p1['has_hit_this_attack'] = True; p1_hit_this_tick = True
-                            print(f"P1 HIT P2. P2 Health: {p2['health']}")
-                            room_state['sfx_event_for_client'] = 'sfx_swordSwing'
-                            if p2['health'] <= 0:
-                                # FIXED: Special level logic for AI wins
-                                if room_state['special_level_active']:
-                                    if room_state['special_swap_target_player_id'] == 'player2' and p2.get('display_character_name') == "Darichris":
-                                        # Darichris was killed - trigger special ending (dark quickening)
-                                        print("AI killed Darichris on holy ground! Dark quickening...")
-                                        handle_special_level_loss_by_swapped(room_state, 'player1')
+                        # NEW: JUMP DEFENSE MECHANIC - Check if attack hit p2 (not ducking AND not jumping, unless attacker is also jumping)
+                        can_hit_p2 = (abs(attack_x - p2_center_x) < HIT_BOX_WIDTH and 
+                                     abs(p1_center_y - p2_center_y) < VERTICAL_CLASH_TOLERANCE)
+                        
+                        # JUMP DEFENSE: If defender is jumping, they avoid damage UNLESS attacker is also jumping
+                        if can_hit_p2 and not p2['is_ducking']:
+                            if p2['is_jumping'] and not p1['is_jumping']:
+                                # Defender is jumping and attacker is not - JUMP DEFENSE successful!
+                                print(f"P2 JUMP DEFENSE! P2 avoided P1's ground attack by jumping")
+                                p1['has_hit_this_attack'] = True  # Prevent multiple attempts
+                                # Play a different sound or no sound to indicate the block
+                                room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'  # Miss sound
+                            else:
+                                # Normal hit - either both jumping or defender not jumping
+                                p2['health'] -= 10; p1['has_hit_this_attack'] = True; p1_hit_this_tick = True
+                                print(f"P1 HIT P2. P2 Health: {p2['health']} (P1 jumping: {p1['is_jumping']}, P2 jumping: {p2['is_jumping']})")
+                                room_state['sfx_event_for_client'] = 'sfx_swordSwing'
+                                if p2['health'] <= 0:
+                                    # FIXED: Special level logic for AI wins
+                                    if room_state['special_level_active']:
+                                        if room_state['special_swap_target_player_id'] == 'player2' and p2.get('display_character_name') == "Darichris":
+                                            # Darichris was killed - trigger special ending (dark quickening)
+                                            print("AI killed Darichris on holy ground! Dark quickening...")
+                                            handle_special_level_loss_by_swapped(room_state, 'player1')
+                                        else:
+                                            # The non-Darichris player was killed - this means Darichris won!
+                                            print("Darichris defeated the AI! Church victory...")
+                                            room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
+                                            room_state['current_background_index'] = random.choice([0, 1])
+                                            room_state['round_winner_player_id'] = 'player2'  
+                                            end_special_level(room_state)
                                     else:
-                                        # The non-Darichris player was killed - this means Darichris won!
-                                        print("Darichris defeated the AI! Church victory...")
-                                        room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
-                                        room_state['current_background_index'] = random.choice([0, 1])
-                                        room_state['round_winner_player_id'] = 'player2'  
-                                        end_special_level(room_state)
-                                else:
-                                    handle_round_victory(room_state, 'player1', 'player2')
+                                        handle_round_victory(room_state, 'player1', 'player2')
                     
                     if p2['is_attacking'] and not p2['has_hit_this_attack'] and p1['health'] > 0:
                         # Calculate attack position extending from sprite edge
@@ -655,29 +665,39 @@ def game_tick(room_state):
                         else:  # Facing left
                             attack_x = p2_center_x - ATTACK_RANGE_EXTENSION
                         
-                        # Check if attack hit p1 (not ducking)
-                        if abs(attack_x - p1_center_x) < HIT_BOX_WIDTH and \
-                           abs(p2_center_y - p1_center_y) < VERTICAL_CLASH_TOLERANCE and \
-                           not p1['is_ducking']:
-                            p1['health'] -= 10; p2['has_hit_this_attack'] = True; p2_hit_this_tick = True
-                            print(f"P2 HIT P1. P1 Health: {p1['health']}")
-                            room_state['sfx_event_for_client'] = 'sfx_swordSwing'
-                            if p1['health'] <= 0:
-                                # FIXED: Special level logic for AI opponent
-                                if room_state['special_level_active']:
-                                    if room_state['special_swap_target_player_id'] == 'player1' and p1.get('display_character_name') == "Darichris":
-                                        # Darichris was killed - trigger special ending (dark quickening)
-                                        print("AI killed Darichris on holy ground! Dark quickening...")
-                                        handle_special_level_loss_by_swapped(room_state, 'player2')
+                        # NEW: JUMP DEFENSE MECHANIC - Check if attack hit p1 (not ducking AND not jumping, unless attacker is also jumping)
+                        can_hit_p1 = (abs(attack_x - p1_center_x) < HIT_BOX_WIDTH and 
+                                     abs(p2_center_y - p1_center_y) < VERTICAL_CLASH_TOLERANCE)
+                        
+                        # JUMP DEFENSE: If defender is jumping, they avoid damage UNLESS attacker is also jumping
+                        if can_hit_p1 and not p1['is_ducking']:
+                            if p1['is_jumping'] and not p2['is_jumping']:
+                                # Defender is jumping and attacker is not - JUMP DEFENSE successful!
+                                print(f"P1 JUMP DEFENSE! P1 avoided P2's ground attack by jumping")
+                                p2['has_hit_this_attack'] = True  # Prevent multiple attempts
+                                # Play a different sound or no sound to indicate the block
+                                room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'  # Miss sound
+                            else:
+                                # Normal hit - either both jumping or defender not jumping
+                                p1['health'] -= 10; p2['has_hit_this_attack'] = True; p2_hit_this_tick = True
+                                print(f"P2 HIT P1. P1 Health: {p1['health']} (P1 jumping: {p1['is_jumping']}, P2 jumping: {p2['is_jumping']})")
+                                room_state['sfx_event_for_client'] = 'sfx_swordSwing'
+                                if p1['health'] <= 0:
+                                    # FIXED: Special level logic for AI opponent
+                                    if room_state['special_level_active']:
+                                        if room_state['special_swap_target_player_id'] == 'player1' and p1.get('display_character_name') == "Darichris":
+                                            # Darichris was killed - trigger special ending (dark quickening)
+                                            print("AI killed Darichris on holy ground! Dark quickening...")
+                                            handle_special_level_loss_by_swapped(room_state, 'player2')
+                                        else:
+                                            # The non-Darichris player was killed - this means Darichris won!
+                                            print("Darichris defeated the AI! Church victory...")
+                                            room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
+                                            room_state['current_background_index'] = random.choice([0, 1])
+                                            room_state['round_winner_player_id'] = 'player1'  
+                                            end_special_level(room_state)
                                     else:
-                                        # The non-Darichris player was killed - this means Darichris won!
-                                        print("Darichris defeated the AI! Church victory...")
-                                        room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS})
-                                        room_state['current_background_index'] = random.choice([0, 1])
-                                        room_state['round_winner_player_id'] = 'player1'  
-                                        end_special_level(room_state)
-                                else:
-                                    handle_round_victory(room_state, 'player2', 'player1')
+                                        handle_round_victory(room_state, 'player2', 'player1')
                 
                 # IMPROVED: Sword effects sound matching original
                 if p1['is_attacking'] and p2['is_attacking'] and not room_state['swordeffects_playing']:
