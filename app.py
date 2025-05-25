@@ -36,12 +36,12 @@ AI_SID_PLACEHOLDER = "AI_PLAYER_SID"
 
 # BALANCED: AI constants - reduced frequency for better gameplay
 AI_SPEED_MULTIPLIER = 0.4  # Slower AI movement for better positioning
-AI_PREFERRED_DISTANCE = 80  # AI stays closer for more clashes
+AI_PREFERRED_DISTANCE = 60  # AI stays closer for more clashes
 AI_DISTANCE_BUFFER = 15     # Smaller buffer zone for tighter combat
 AI_ATTACK_FREQUENCY = 0.25  # REDUCED: Less frequent attacks (was 0.45)
 AI_JUMP_FREQUENCY = 0.12    # REDUCED: Less jumping to stay in range
 AI_DUCK_FREQUENCY = 0.15    # REDUCED: Less ducking for more engagement
-AI_ATTACK_COOLDOWN_BONUS = 30  # Longer cooldown for less action
+AI_ATTACK_COOLDOWN_BONUS = 15  # Shorter cooldown for more action
 
 # GENEROUS: Clash detection for epic moments but not overwhelming
 CLASH_DETECTION_RANGE = 135  # Generous clash range
@@ -1007,9 +1007,14 @@ def on_player_character_choice(data):
             ready_for_controls = True
 
     if ready_for_controls:
+        # CRITICAL: Ensure game loop is running before setting timer
+        if not ensure_game_loop_running():
+            print("❌ WARNING: Game loop not running when setting controls timer!")
+        
         room['current_screen'] = 'CONTROLS'
         room['state_timer_ms'] = CONTROLS_SCREEN_DURATION_MS
         print(f"🎯 Setting CONTROLS screen for {room['game_mode']} mode with {CONTROLS_SCREEN_DURATION_MS}ms timer")
+        print(f"🔧 Game loop status: Started={game_loop_started}, Attempts={game_loop_start_attempts}")
     
     socketio.emit('update_room_state', room, room=game_room_id)
 
@@ -1150,6 +1155,60 @@ def game_loop_task():
     except Exception as fatal_error:
         print(f"💀 FATAL ERROR in game_loop_task: {fatal_error}")
 
+# Socket event handlers
+@socketio.on('connect')
+def handle_connect():
+    # AGGRESSIVE: Try to start game loop when first player connects
+    start_game_loop()
+    
+    player_sid = request.sid
+    room = game_sessions[game_room_id]
+    print(f"🔌 Connect attempt: {player_sid}.")
+    
+    human_sids_in_room = [sid for sid in room['players'] if sid != AI_SID_PLACEHOLDER]
+    assigned_player_id_str = None
+    
+    if not any(p['id'] == 'player1' for sid, p in room['players'].items() if sid != AI_SID_PLACEHOLDER): 
+        assigned_player_id_str = "player1"
+    elif not any(p['id'] == 'player2' for sid, p in room['players'].items() if sid != AI_SID_PLACEHOLDER) and len(human_sids_in_room) < MAX_PLAYERS_PER_ROOM:
+        assigned_player_id_str = "player2"
+    
+    if assigned_player_id_str is None:
+        print(f"🚫 Room full or slot error. SID {player_sid} rejected.")
+        emit('room_full', room=player_sid)
+        disconnect(player_sid)
+        return
+    
+    player_id_num = 1 if assigned_player_id_str == "player1" else 2
+    player_state = get_default_player_state(player_id_num)
+    player_state['sid'] = player_sid
+    
+    if player_state['id'] == 'player1' and room['player1_char_name_chosen']: 
+        player_state.update({'character_name': room['player1_char_name_chosen'], 
+                            'original_character_name': room['player1_char_name_chosen'], 
+                            'display_character_name': room['player1_char_name_chosen']})
+    elif player_state['id'] == 'player2' and room['player2_char_name_chosen']: 
+        player_state.update({'character_name': room['player2_char_name_chosen'], 
+                            'original_character_name': room['player2_char_name_chosen'], 
+                            'display_character_name': room['player2_char_name_chosen']})
+    
+    room['players'][player_sid] = player_state
+    join_room(game_room_id)
+    print(f"✅ Player {player_state['id']} ({player_sid}) connected. Total SIDs (inc AI): {len(room['players'])}.")
+    
+    # FIXED: Handle Player 2 connecting after Player 1 has already chosen
+    if player_state['id'] == 'player2' and room['game_mode'] == 'TWO' and \
+       room['p1_selection_complete'] and room['current_screen'] == 'CHARACTER_SELECT_P1':
+        room['current_screen'] = 'CHARACTER_SELECT_P2'
+        room['p1_waiting_for_p2'] = False
+    elif player_state['id'] == 'player2' and room['game_mode'] in ['TWO', 'TWO_LOCAL', 'TWO_ONLINE'] and \
+         room['p1_selection_complete'] and not room['p2_selection_complete'] and \
+         room['current_screen'] != 'CHARACTER_SELECT_P2': 
+        room['current_screen'] = 'CHARACTER_SELECT_P2'
+    
+    emit('assign_player_id', {'playerId': player_state['id'], 'initialRoomState': room}, room=player_sid)
+    socketio.emit('update_room_state', room, room=game_room_id)
+
 # Global flag to track if game loop is running
 game_loop_started = False
 
@@ -1172,24 +1231,108 @@ def start_game_loop():
         traceback.print_exc()
         return False
 
-# Production configuration
+@app.route('/start_game_loop')
+def start_game_loop_route():
+    """Manual trigger to start game loop if it's not running"""
+    try:
+        print("🔧 Manual game loop start triggered!")
+        result = start_game_loop()
+        return {'status': 'success' if result else 'failed', 'timestamp': time.time()}
+    except Exception as e:
+        print(f"❌ Failed to start game loop manually: {e}")
+        return {'status': 'error', 'error': str(e), 'timestamp': time.time()}
+
+@app.route('/tick')
+def manual_tick():
+    """Manual single game tick for testing"""
+    try:
+        print("🔧 Manual tick triggered!")
+        room = game_sessions.get(game_room_id)
+        if room:
+            game_tick(room)
+            return {'status': 'tick_executed', 'screen': room.get('current_screen'), 'timer': room.get('state_timer_ms'), 'timestamp': time.time()}
+        else:
+            return {'status': 'no_room', 'timestamp': time.time()}
+    except Exception as e:
+        print(f"❌ Failed manual tick: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'status': 'error', 'error': str(e), 'timestamp': time.time()}
+
+    # Production configuration
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print(f"🗡️ Kylander: FIXED Edition Server starting on port {port}...")
     print("⚔️ FIXES: 4-second Controls Screen, Proper Mode Selection, Character Choice Flow!")
+    print("🔧 ENHANCED: Aggressive game loop startup with retry logic and debugging!")
     
-    print("🚀 Starting game loop background task...")
+    # AGGRESSIVE: Try to start the game loop multiple times and ways
+    print("🚀 AGGRESSIVE: Attempting to start game loop background task multiple ways...")
+    
+    # Method 1: Start before server
+    print("Method 1: Starting before server...")
     start_game_loop()
     
+    # Method 2: Start after a delay
     def delayed_start():
         import time
-        time.sleep(2)
-        print("🔄 Secondary game loop start attempt...")
+        time.sleep(2)  # Wait for server to be ready
+        print("Method 2: Delayed start...")
         start_game_loop()
+        
+        # Method 3: Periodic retry
+        while True:
+            time.sleep(10)  # Check every 10 seconds
+            if not game_loop_started and game_loop_start_attempts < 10:
+                print(f"Method 3: Periodic retry #{game_loop_start_attempts + 1}...")
+                start_game_loop()
+            time.sleep(30)  # Wait 30 seconds between retry attempts
     
+    # Method 4: Try alternative approach using threading
+    def thread_based_game_loop():
+        import time
+        print("Method 4: Thread-based fallback starting...")
+        time.sleep(5)  # Wait a bit longer
+        
+        # Alternative approach - run game tick in a thread if socketio background task fails
+        def threaded_game_tick():
+            global last_broadcast_time
+            print("🧵 Thread-based game loop starting as fallback...")
+            while True:
+                try:
+                    room = game_sessions.get(game_room_id)
+                    if room:
+                        current_time = time.time()
+                        if current_time - last_broadcast_time >= BROADCAST_INTERVAL:
+                            game_tick(room)
+                            last_broadcast_time = current_time
+                    time.sleep(1/60)  # 60 FPS
+                except Exception as e:
+                    print(f"❌ Thread-based game loop error: {e}")
+                    time.sleep(1)
+        
+        # Only start thread fallback if socketio method failed
+        time.sleep(8)  # Give socketio method time to work
+        if not game_loop_started:
+            print("🧵 Starting thread-based fallback game loop...")
+            import threading
+            fallback_thread = threading.Thread(target=threaded_game_tick)
+            fallback_thread.daemon = True
+            fallback_thread.start()
+    
+    # Start the server
+    print("🎯 Starting SocketIO server...")
+    
+    # Start all the delayed tasks
     import threading
+    
     delayed_thread = threading.Thread(target=delayed_start)
     delayed_thread.daemon = True
     delayed_thread.start()
     
+    fallback_thread = threading.Thread(target=thread_based_game_loop)
+    fallback_thread.daemon = True
+    fallback_thread.start()
+    
+    # Start the server
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
