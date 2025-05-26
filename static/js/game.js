@@ -633,7 +633,7 @@ function drawChurchVictoryScreen() {
     // NEW: Add visual indicator when Darius sound is playing with specific messaging
     if (roomState.church_victory_sound_triggered) {
         const bgIndex = roomState.church_victory_bg_index || roomState.current_background_index || 0;
-        const message = bgIndex === 0 ? "DARICHRIS CLAIMS THE PRIZE" : "DARICHRIS HAS CLAIMED VICTORY";
+        const message = bgIndex === 0 ? "DARICHRIS OFFERS COUNCIL" : "DARICHRIS SHARES HIS MEAD";
         
         ctx.font = '28px HighlanderFont, Arial Black';
         ctx.fillStyle = 'white';
