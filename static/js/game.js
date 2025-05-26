@@ -8,7 +8,7 @@ canvas.height = GAME_HEIGHT;
 
 // CHANGED: Sprite scale to 0.875
 const SPRITE_SCALE = 0.875; 
-const SERVER_ATTACK_DURATION = 45;  // INCREASED: Match new server value (was 24)
+const SERVER_ATTACK_DURATION = 24;  // INCREASED: Match server value (was 18)
 const WALK_ANIMATION_MS_PER_FRAME = 133; 
 const QUICKENING_FLASH_DURATION_MS_CLIENT = 100; 
 
@@ -58,7 +58,20 @@ const ASSET_PATHS = {
         "The Kylander": { idle: "static/assets/sprites/fighter2/fighter2.png", duck: "static/assets/sprites/fighter2/fighter2duck.png", jump: "static/assets/sprites/fighter2/fighter2jump.png", jump_attack: "static/assets/sprites/fighter2/fighter2jumpattack.png", attack_prefix: "static/assets/sprites/fighter2/fighter2slash", num_attack: 3, walk_prefix: "static/assets/sprites/fighter2/fighter2walk",   num_walk: 2, name: "The Kylander" },
         "Darichris": { idle: "static/assets/sprites/fighter3/fighter3.png", duck: "static/assets/sprites/fighter3/fighter3duck.png", jump: "static/assets/sprites/fighter3/fighter3jump.png", jump_attack: "static/assets/sprites/fighter3/fighter3jumpattack.png", attack_prefix: "static/assets/sprites/fighter3/fighter3slash", num_attack: 3, walk_prefix: "static/assets/sprites/fighter3/fighter3walk",   num_walk: 2, name: "Darichris" }
     },
-    sfx: { swordClash: "static/assets/sfx/sword_clash.wav", swordSwing: "static/assets/sfx/sword_swing.wav", swordWhoosh: "static/assets/sfx/sword_whoosh.wav", swordEffects: "static/assets/sfx/swordeffects.wav", victoryKurgan: "static/assets/sfx/kurgan_speak_not.wav", victoryBurnOut: "static/assets/sfx/better_to_burn_out.wav", victoryGoat: "static/assets/sfx/highlander_goat.wav", victoryDuncan: "static/assets/sfx/Duncan_did_you_come.wav", victoryKalas: "static/assets/sfx/Kalas_Nothing_Changes.wav", finalVictory: "static/assets/sfx/there_can_be_only_one.wav" },
+    sfx: { 
+        swordClash: "static/assets/sfx/sword_clash.wav", 
+        swordSwing: "static/assets/sfx/sword_swing.wav", 
+        swordWhoosh: "static/assets/sfx/sword_whoosh.wav", 
+        swordEffects: "static/assets/sfx/swordeffects.wav", 
+        victoryKurgan: "static/assets/sfx/kurgan_speak_not.wav", 
+        victoryBurnOut: "static/assets/sfx/better_to_burn_out.wav", 
+        victoryGoat: "static/assets/sfx/highlander_goat.wav", 
+        victoryDuncan: "static/assets/sfx/Duncan_did_you_come.wav", 
+        victoryKalas: "static/assets/sfx/Kalas_Nothing_Changes.wav", 
+        finalVictory: "static/assets/sfx/there_can_be_only_one.wav",
+        darius1: "static/assets/sfx/Darius1.mp3",  // NEW: Darius sound for churchvictory2.png (index 1)
+        darius2: "static/assets/sfx/Darius2.mp3"   // NEW: Darius sound for churchvictory.png (index 0)
+    },
     music: { 
         music_backgroundMusic: "static/assets/music/background_music.mp3",
         music_slideshowMusic: "static/assets/music/background_music2.mp3"
@@ -67,7 +80,6 @@ const ASSET_PATHS = {
 
 const loadedAssets = { images: {}, sounds: {} };
 let assetsToLoad = 0, assetsLoaded = 0;
-// ENHANCED: Better animation state management
 const clientPlayerAnimationState = {};
 
 // FIXED: Track dark quickening alternative
@@ -361,7 +373,7 @@ function drawTopPlayerUI(playerState, x, y, isRightAligned = false) {
     ctx.textAlign = 'left'; 
 }
 
-// ENHANCED: Playing screen with better animation handling
+// FIXED: Added SPECIAL_END state handling
 function drawPlayingScreen() {
     // IMPROVED: Special level screen handling
     const bgCategory = roomState.special_level_active ? 'church' : (roomState.current_background_key || 'paris');
@@ -400,7 +412,6 @@ function drawPlayingScreen() {
     }
     fightersToDraw.sort((a, b) => a.y - b.y);
 
-    // ENHANCED: Improved animation handling for fighters
     fightersToDraw.forEach(player => {
         const charKey = player.character_name; 
         const charDataClient = ASSET_PATHS.characters[charKey];
@@ -410,37 +421,11 @@ function drawPlayingScreen() {
         let frameIndex = 0; 
         
         if (!clientPlayerAnimationState[player.id]) {
-            clientPlayerAnimationState[player.id] = { 
-                walk_frame: 0, 
-                walk_timer: 0,
-                last_animation: 'idle',  // Track previous animation
-                animation_changed_time: Date.now(),
-                idle_timer: 0  // Track how long we've been idle
-            };
+            clientPlayerAnimationState[player.id] = { walk_frame: 0, walk_timer: 0 };
         }
         const animState = clientPlayerAnimationState[player.id];
 
-        // ENHANCED: Better animation state management
-        const currentServerAnimation = player.current_animation || 'idle';
-        
-        // Track animation changes
-        if (animState.last_animation !== currentServerAnimation) {
-            animState.last_animation = currentServerAnimation;
-            animState.animation_changed_time = Date.now();
-            
-            // Reset walk frame when switching to walk
-            if (currentServerAnimation === 'walk') {
-                animState.walk_frame = 0;
-                animState.walk_timer = Date.now();
-            }
-            
-            // Reset idle timer when switching to idle
-            if (currentServerAnimation === 'idle') {
-                animState.idle_timer = Date.now();
-            }
-        }
-
-        // ENHANCED: Animation priority and state handling with knockback effects
+        // IMPROVED: Better animation frame synchronization
         if (player.is_attacking) {
             if (player.is_jumping) {
                 // JUMP ATTACK - use jump_attack sprite
@@ -457,29 +442,16 @@ function drawPlayingScreen() {
             currentImageKey = `char_${charKey}_jump`;
         } else if (player.is_ducking) {
             currentImageKey = `char_${charKey}_duck`;
-        } else if (currentServerAnimation === 'walk') {
-            // ENHANCED: More reliable walk animation with anti-flicker
+        } else if (player.current_animation === 'walk') {
             const numWalkFrames = charDataClient.num_walk;
-            const walkAnimSpeed = WALK_ANIMATION_MS_PER_FRAME;
-            
-            // Only animate if we've been walking for a bit (prevents single-frame flickers)
-            const walkDuration = Date.now() - animState.animation_changed_time;
-            if (walkDuration > 50) {  // 50ms minimum before starting walk animation
-                if (Date.now() - animState.walk_timer > walkAnimSpeed) {
-                    animState.walk_frame = (animState.walk_frame + 1) % numWalkFrames;
-                    animState.walk_timer = Date.now();
-                }
-                frameIndex = animState.walk_frame;
-                currentImageKey = `char_${charKey}_walk_${frameIndex}`;
-            } else {
-                // Still in the brief period after starting to walk, show idle
-                currentImageKey = `char_${charKey}_idle`;
+            if (Date.now() - animState.walk_timer > WALK_ANIMATION_MS_PER_FRAME) {
+                animState.walk_frame = (animState.walk_frame + 1) % numWalkFrames;
+                animState.walk_timer = Date.now();
             }
+            frameIndex = animState.walk_frame;
+            currentImageKey = `char_${charKey}_walk_${frameIndex}`;
         } else { 
-            // DEFAULT: Use idle animation
             currentImageKey = `char_${charKey}_idle`; 
-            // Reset walk animation state when not walking
-            animState.walk_frame = 0;
         }
 
         const currentImage = loadedAssets.images[currentImageKey] || loadedAssets.images[`char_${charKey}_idle`];
@@ -491,46 +463,20 @@ function drawPlayingScreen() {
             const drawX = player.x - scaledWidth / 2;
             const drawY = player.y - scaledHeight; 
 
-            // ENHANCED: Add knockback visual effect with screen shake
-            let finalDrawX = drawX;
-            let finalDrawY = drawY;
-            
-            // Add dramatic shake effect during knockback
-            if (player.knockback_timer > 0) {
-                const shakeIntensity = Math.min(8, player.knockback_timer / 3);  // INCREASED shake
-                finalDrawX += (Math.random() - 0.5) * shakeIntensity * 2;
-                finalDrawY += (Math.random() - 0.5) * shakeIntensity;
-                
-                // Add slight red tint during knockback
-                ctx.save();
-                ctx.globalCompositeOperation = 'multiply';
-                ctx.fillStyle = 'rgba(255, 200, 200, 0.3)';
-                ctx.fillRect(finalDrawX, finalDrawY, scaledWidth, scaledHeight);
-                ctx.restore();
-            }
-
             if (player.facing === -1) {
                 ctx.save(); 
                 ctx.scale(-1, 1);
-                ctx.drawImage(currentImage, -finalDrawX - scaledWidth, finalDrawY, scaledWidth, scaledHeight);
+                ctx.drawImage(currentImage, -drawX - scaledWidth, drawY, scaledWidth, scaledHeight);
                 ctx.restore();
             } else {
-                ctx.drawImage(currentImage, finalDrawX, finalDrawY, scaledWidth, scaledHeight);
-            }
-            
-            // DEBUG: Show animation state (set to true for debugging)
-            if (false) {
-                ctx.fillStyle = 'yellow';
-                ctx.font = '12px Arial';
-                ctx.fillText(`${currentServerAnimation} (${currentImageKey})`, player.x - 50, player.y - scaledHeight - 10);
-                ctx.fillText(`KB: ${player.knockback_timer || 0}`, player.x - 30, player.y - scaledHeight + 5);
+                ctx.drawImage(currentImage, drawX, drawY, scaledWidth, scaledHeight);
             }
         } else { 
-            console.warn("Missing image for key:", currentImageKey); 
+            if(charKey && ASSET_PATHS.characters[charKey]) console.warn("Missing image for key:", currentImageKey); 
         }
     });
     
-    // ENHANCED: Handle both quickening and dark quickening effects with more drama
+    // FIXED: Handle both quickening and dark quickening effects
     if (roomState.quickening_effect_active || roomState.dark_quickening_effect_active) {
         if (Math.floor(Date.now() / (QUICKENING_FLASH_DURATION_MS_CLIENT / 2)) % 2 === 0) { 
             // Full screen inversion
@@ -545,30 +491,18 @@ function drawPlayingScreen() {
             const effectImg = loadedAssets.images[effectImgKey];
             if (effectImg) {
                 ctx.save();
-                ctx.globalAlpha = roomState.dark_quickening_effect_active ? 0.8 : 0.7; // Dark quickening more visible
+                ctx.globalAlpha = 0.7; // Make overlay partially transparent
                 ctx.drawImage(effectImg, 0, 0, GAME_WIDTH, GAME_HEIGHT);
                 ctx.restore();
             }
         }
     }
     
-    // ENHANCED: Handle clash flash effect for dramatic knockback with multiple colors
+    // NEW: Handle clash flash effect for dramatic knockback
     if (roomState.clash_flash_timer > 0) {
         ctx.save();
-        
-        // Cycle through colors for more dramatic effect
-        const flashPhase = roomState.clash_flash_timer % 4;
-        if (flashPhase === 0) {
-            ctx.fillStyle = 'white';
-        } else if (flashPhase === 1) {
-            ctx.fillStyle = 'cyan';
-        } else if (flashPhase === 2) {
-            ctx.fillStyle = 'yellow';
-        } else {
-            ctx.fillStyle = 'white';
-        }
-        
-        ctx.globalAlpha = 0.4 * (roomState.clash_flash_timer / 12); // Fade out effect
+        ctx.fillStyle = 'white';
+        ctx.globalAlpha = 0.3 * (roomState.clash_flash_timer / 5); // Fade out effect
         ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
         ctx.restore();
     }
@@ -677,7 +611,7 @@ function drawChurchIntroScreen() {
     }
 }
 
-// FIXED: Add church victory screen function
+// UPDATED: Church victory screen function with Darius sound support
 function drawChurchVictoryScreen() {
     // Use UI assets for church victory screens
     const bgKey = `ui_churchVictory${roomState.current_background_index === 1 ? '2' : '1'}`;
@@ -693,6 +627,28 @@ function drawChurchVictoryScreen() {
         ctx.font = '40px HighlanderFont, Arial Black'; 
         ctx.textAlign = 'center';
         ctx.fillText("CHURCH VICTORY", GAME_WIDTH / 2, GAME_HEIGHT / 2);
+        ctx.textAlign = 'left';
+    }
+
+    // NEW: Add visual indicator when Darius sound is playing with specific messaging
+    if (roomState.church_victory_sound_triggered) {
+        const bgIndex = roomState.church_victory_bg_index || roomState.current_background_index || 0;
+        const message = bgIndex === 0 ? "DARICHRIS CLAIMS THE PRIZE" : "DARICHRIS HAS CLAIMED VICTORY";
+        
+        ctx.font = '28px HighlanderFont, Arial Black';
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = "rgba(0,0,0,0.9)";
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetX = 3;
+        ctx.shadowOffsetY = 3;
+        ctx.strokeText(message, GAME_WIDTH / 2, GAME_HEIGHT - 60);
+        ctx.fillText(message, GAME_WIDTH / 2, GAME_HEIGHT - 60);
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
         ctx.textAlign = 'left';
     }
 }
@@ -782,17 +738,10 @@ function drawSlideshowScreen() {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0; ctx.textAlign='left';
 }
 
-// ENHANCED: Better animation cleanup with reset logic
 function cleanupAnimationStates() {
     Object.keys(clientPlayerAnimationState).forEach(playerId => {
         if (clientPlayerAnimationState[playerId]) {
-            clientPlayerAnimationState[playerId] = { 
-                walk_frame: 0, 
-                walk_timer: 0,
-                last_animation: 'idle',
-                animation_changed_time: Date.now(),
-                idle_timer: 0
-            };
+            clientPlayerAnimationState[playerId] = { walk_frame: 0, walk_timer: 0 };
         }
     });
 }
@@ -891,12 +840,13 @@ socket.on('assign_player_id', (data) => {
     console.log('Assigned ID:', localPlayerId, 'Initial State Received. Screen:', roomState.current_screen);
 });
 
-// FIXED: Enhanced slideshow music handling with better reset logic
+// ENHANCED: Slideshow music handling with Darius sound support
 socket.on('update_room_state', (newRoomState) => {
     const oldScreen = roomState.current_screen;
     const oldRoundWinner = roomState.round_winner_player_id;
     const oldSlideshowMusic = roomState.slideshow_music_started;
     const oldSlideshow = (roomState.current_screen === 'SLIDESHOW');
+    const oldChurchVictorySound = roomState.church_victory_sound_triggered; // NEW: Track church victory sound
     roomState = newRoomState;
 
     if (roomState.round_winner_player_id && roomState.round_winner_player_id !== oldRoundWinner) {
@@ -1015,7 +965,7 @@ socket.on('update_room_state', (newRoomState) => {
         loadedAssets.sounds['sfx_finalVictory']._playedOnceFS = false;
     }
 
-    // Enhanced sound effect management remains the same...
+    // Enhanced sound effect management with Darius sound support
     if (roomState.sfx_event_for_client) {
         const sfx = loadedAssets.sounds[roomState.sfx_event_for_client];
         if (sfx) {
@@ -1025,6 +975,28 @@ socket.on('update_room_state', (newRoomState) => {
         
         if (roomState.sfx_event_for_client === 'sfx_swordEffects') {
             sfx.volume = 0.7;
+        }
+    }
+
+    // NEW: Handle Darius sounds for church victory screens based on background
+    if (roomState.church_victory_sound_triggered && !oldChurchVictorySound && 
+        (roomState.current_screen === 'CHURCH_VICTORY' || roomState.current_screen === 'CHURCH_VICTORY_IMMEDIATE')) {
+        
+        // Determine which Darius sound to play based on church victory background index
+        const bgIndex = roomState.church_victory_bg_index || roomState.current_background_index || 0;
+        const soundKey = bgIndex === 0 ? 'sfx_darius2' : 'sfx_darius1'; // 0 = churchvictory.png (Darius2), 1 = churchvictory2.png (Darius1)
+        const soundName = bgIndex === 0 ? 'Darius2' : 'Darius1';
+        const bgName = bgIndex === 0 ? 'churchvictory.png' : 'churchvictory2.png';
+        
+        console.log(`Playing ${soundName} sound for church victory with ${bgName} (index ${bgIndex})`);
+        
+        const dariusSound = loadedAssets.sounds[soundKey];
+        if (dariusSound) {
+            dariusSound.currentTime = 0;
+            dariusSound.volume = 0.8; // Slightly louder for dramatic effect
+            dariusSound.play().catch(e => console.warn(`${soundName} sound play error:`, e));
+        } else {
+            console.warn(`${soundName} sound not loaded (key: ${soundKey})`);
         }
     }
 });
@@ -1092,7 +1064,6 @@ function handleKeyUp(e) {
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
 
-// ENHANCED: Better input handling to prevent stuck animations
 function sendPlayerActions() {
     if (!['PLAYING', 'SPECIAL'].includes(roomState.current_screen) || !localPlayerId || !roomState.players || !socket.connected) return;
     const myClientPlayerObject = Object.values(roomState.players).find(p => p.sid === socket.id);
@@ -1110,42 +1081,19 @@ function sendPlayerActions() {
         pControls = { left: 'arrowleft', right: 'arrowright', jump: 'arrowup', duck: 'arrowdown', attack: ['enter'] };
     }
 
-    // Track if player is actually moving this frame
-    let isMoving = false;
-    
-    if (keysPressed[pControls.left]) {
-        actions.push({ type: 'move', direction: 'left' });
-        isMoving = true;
-    }
-    if (keysPressed[pControls.right]) {
-        actions.push({ type: 'move', direction: 'right' });
-        isMoving = true;
-    }
-    if (keysPressed[pControls.jump]) {
-        actions.push({ type: 'jump' });
-    }
+    if (keysPressed[pControls.left]) actions.push({ type: 'move', direction: 'left' });
+    if (keysPressed[pControls.right]) actions.push({ type: 'move', direction: 'right' });
+    if (keysPressed[pControls.jump]) actions.push({ type: 'jump' }); 
     
     let currentDuckStateClient = keysPressed[pControls.duck] || false;
-    if (currentDuckStateClient && !myClientPlayerObject.is_ducking) {
-        actions.push({ type: 'duck', active: true });
-    }
+    if (currentDuckStateClient && !myClientPlayerObject.is_ducking) actions.push({ type: 'duck', active: true });
     
     let attackKeyDown = pControls.attack.some(key => keysPressed[key]);
     if (attackKeyDown && !myClientPlayerObject.is_attacking && myClientPlayerObject.cooldown_timer === 0) {
         actions.push({ type: 'attack' });
+        // Let server handle all attack sounds for consistency
     }
-    
-    // ENHANCED: Send "stop moving" action when no movement keys are pressed
-    // This helps the server properly reset animation states
-    if (!isMoving && !myClientPlayerObject.is_attacking && !myClientPlayerObject.is_jumping && 
-        !myClientPlayerObject.is_ducking && myClientPlayerObject.current_animation === 'walk') {
-        // Add a special "stop" action to help server reset animation
-        actions.push({ type: 'stop_moving' });
-    }
-    
-    if (actions.length > 0) {
-        socket.emit('player_actions', { actions: actions });
-    }
+    if (actions.length > 0) socket.emit('player_actions', { actions: actions });
 }
 
 function enableAudioContext() {
