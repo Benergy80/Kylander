@@ -65,8 +65,7 @@ def get_default_player_state(player_id_num, character_name_choice=None):
         'vertical_velocity': 0, 'cooldown_timer': 0, 'has_hit_this_attack': False,
         'is_ready_next_round': False, '_ai_last_duck_time': 0, '_ai_last_jump_time': 0,
         'miss_swing': False,  # Track missed swings for sound effects
-        'knockback_timer': 0,  # NEW: Track knockback state
-        '_ai_was_moving': False  # NEW: Track AI movement state for smooth animations
+        'knockback_timer': 0  # NEW: Track knockback state
     }
 
 def get_default_room_state():
@@ -133,13 +132,6 @@ def cleanup_room_state(room_state):
             player_state['is_ducking'] = False
             if not player_state.get('is_jumping') and not player_state.get('is_attacking'):
                 player_state['current_animation'] = 'idle'
-        
-        # FIXED: Don't reset AI animation state during cleanup - let AI manage its own animations
-        # Only reset human player animations if they're stuck
-        if player_state.get('sid') != AI_SID_PLACEHOLDER:
-            if not player_state.get('is_jumping') and not player_state.get('is_attacking') and not player_state.get('is_ducking'):
-                if player_state.get('current_animation') not in ['idle', 'walk']:
-                    player_state['current_animation'] = 'idle'
     
     room_state['sfx_event_for_client'] = None
     room_state['swordeffects_playing'] = False
@@ -156,11 +148,6 @@ def reset_player_for_round(player_state, room_state):
                          'has_hit_this_attack': False, 'is_ready_next_round': False,
                          'facing': 1 if player_state['id'] == 'player1' else -1,
                          'miss_swing': False, 'knockback_timer': 0})  
-    
-    # FIXED: Reset AI movement tracking for smooth animations
-    if player_state.get('sid') == AI_SID_PLACEHOLDER:
-        player_state['_ai_was_moving'] = False
-    
     # FIXED: Proper asset swapping for special level
     if room_state['special_level_active'] and player_state['id'] == room_state['special_swap_target_player_id']:
         player_state['character_name'] = "Darichris" 
@@ -334,14 +321,10 @@ def update_ai(ai_state, target_state, room_state):
                 'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS  # UPDATED: Much longer AI cooldown (15 + 45 = 60)
             })
     
-    # FIXED: Smooth movement behavior - only change animation when behavior actually changes
+    # Movement behavior - SIMPLE APPROACH: Just reduce the frequency of decisions
     if not ai_state['is_attacking'] and not ai_state['is_ducking']:
-        # Store previous movement state to avoid constantly resetting animation
-        prev_moving = ai_state.get('_ai_was_moving', False)
-        currently_moving = False
-        
-        # Move 70% of the time
-        if random.random() >= 0.3:
+        # Move 70% of the time, but make decisions less frequently to reduce jerkiness
+        if random.random() >= 0.4:  # SLIGHTLY LESS frequent decisions (was 0.3)
             # Keep optimal fighting distance with updated buffer
             if distance > AI_PREFERRED_DISTANCE + AI_DISTANCE_BUFFER:
                 # Move closer
@@ -352,7 +335,8 @@ def update_ai(ai_state, target_state, room_state):
                 else:
                     ai_state['x'] -= move_speed
                     ai_state['facing'] = -1
-                currently_moving = True
+                if not ai_state['is_jumping']:
+                    ai_state['current_animation'] = 'walk'
             elif distance < AI_PREFERRED_DISTANCE - AI_DISTANCE_BUFFER:
                 # Move away to maintain distance
                 move_speed = int(PLAYER_SPEED * AI_SPEED_MULTIPLIER)
@@ -362,27 +346,13 @@ def update_ai(ai_state, target_state, room_state):
                 else:
                     ai_state['x'] += move_speed
                     ai_state['facing'] = -1
-                currently_moving = True
+                if not ai_state['is_jumping']:
+                    ai_state['current_animation'] = 'walk'
             else:
-                # In optimal range - just face opponent, not moving
+                # In optimal range - just face opponent
+                if not ai_state['is_jumping']:
+                    ai_state['current_animation'] = 'idle'
                 ai_state['facing'] = 1 if dx > 0 else -1
-                currently_moving = False
-        else:
-            # AI chose not to move this frame
-            ai_state['facing'] = 1 if dx > 0 else -1
-            currently_moving = False
-        
-        # FIXED: Only change animation when movement state actually changes
-        if currently_moving != prev_moving:
-            if currently_moving and not ai_state['is_jumping']:
-                ai_state['current_animation'] = 'walk'
-                print(f"AI {ai_state['id']} started walking")
-            elif not currently_moving and not ai_state['is_jumping']:
-                ai_state['current_animation'] = 'idle' 
-                print(f"AI {ai_state['id']} stopped walking")
-        
-        # Store current movement state for next frame
-        ai_state['_ai_was_moving'] = currently_moving
     
     # UPDATED: More conservative jumping for less erratic AI behavior
     if (not ai_state['is_jumping'] and not ai_state['is_ducking'] and 
