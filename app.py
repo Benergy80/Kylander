@@ -1001,6 +1001,9 @@ def handle_player_actions(data):
         print(f"Player {player['id']} in knockback, ignoring input")
         return
     
+    # NEW: Check if there are any movement actions in this frame
+    has_movement_action = any(action.get('type') == 'move' for action in actions)
+    
     for action_data in actions:
         action_type = action_data.get('type')
         if action_type == 'move':
@@ -1033,8 +1036,14 @@ def handle_player_actions(data):
                 player['has_hit_this_attack'] = False; player['is_ducking'] = False  # FIXED: Explicitly reset ducking
                 action_taken = True
     
+    # FIXED: Human player walk animation - reset to idle when no movement input
+    if (not has_movement_action and not player['is_jumping'] and not player['is_attacking'] and 
+        not player['is_ducking'] and player['current_animation'] == 'walk'):
+        player['current_animation'] = 'idle'
+        print(f"HUMAN PLAYER: Reset walk animation to idle for {player['id']}")
+    
     # IMPROVED: Better animation state management for human player
-    if not action_taken and not player['is_jumping'] and not player['is_attacking'] and not player['is_ducking']:
+    elif not action_taken and not player['is_jumping'] and not player['is_attacking'] and not player['is_ducking']:
         # Only reset to idle if we're not in a valid animation state
         if player['current_animation'] not in ['idle', 'walk']:
             player['current_animation'] = 'idle'
