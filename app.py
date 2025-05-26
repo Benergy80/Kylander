@@ -4,6 +4,9 @@ import random
 import time
 import os
 
+# Kylander: The Reckoning - Server Code
+# Updated with jump defense mechanics, AI balance, and dual Darius sound support
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'kylander_is_the_best_keep_it_secret_CHANGE_THIS!')
 
@@ -89,7 +92,8 @@ def get_default_room_state():
         'special_level_original_p1_char': None,
         'special_level_original_p2_char': None,
         'slideshow_music_started': False,  # Track slideshow music state
-        'church_victory_sound_triggered': False  # NEW: Track when to play Darius sound
+        'church_victory_sound_triggered': False,  # Track when to play Darius sound
+        'church_victory_bg_index': 0  # NEW: Track which church victory background (0 or 1) for sound selection
     }
 game_sessions[game_room_id] = get_default_room_state()
 
@@ -132,7 +136,8 @@ def cleanup_room_state(room_state):
     room_state['sfx_event_for_client'] = None
     room_state['swordeffects_playing'] = False
     room_state['clash_flash_timer'] = 0  # Reset clash flash effect
-    room_state['church_victory_sound_triggered'] = False  # NEW: Reset church victory sound flag
+    room_state['church_victory_sound_triggered'] = False  # Reset church victory sound flag
+    room_state['church_victory_bg_index'] = 0  # NEW: Reset church victory background index
 
 def reset_player_for_round(player_state, room_state): 
     player_state['health'] = 100
@@ -412,10 +417,11 @@ def game_tick(room_state):
                          room_state['round_winner_player_id'] == room_state['special_swap_target_player_id']:
                         # Darichris (swapped player) won the special round. Show church victory screen.
                         print("Darichris won special round. Showing church victory screen.")
+                        chosen_bg_index = random.choice([0, 1])  # 0 = churchvictory.png, 1 = churchvictory2.png
                         room_state.update({'current_screen': 'CHURCH_VICTORY', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS,
-                                          'church_victory_sound_triggered': True})  # NEW: Flag for Darius sound
-                        # In original, it randomly picks between churchvictory.png and churchvictory2.png
-                        room_state['current_background_index'] = random.choice([0, 1])
+                                          'church_victory_sound_triggered': True, 'church_victory_bg_index': chosen_bg_index})
+                        room_state['current_background_index'] = chosen_bg_index
+                        print(f"Church victory using background index {chosen_bg_index} ({'churchvictory.png' if chosen_bg_index == 0 else 'churchvictory2.png'})")
                         # FIXED: End special level after Darichris wins
                         end_special_level(room_state)
                     elif prev_screen_when_timer_expired == 'SPECIAL' and \
@@ -494,16 +500,18 @@ def game_tick(room_state):
                     # Clear any special level character tracking
                     room_state['special_level_original_p1_char'] = None
                     room_state['special_level_original_p2_char'] = None
-                    # NEW: Reset church victory sound flag
+                    # NEW: Reset church victory sound flags
                     room_state['church_victory_sound_triggered'] = False
+                    room_state['church_victory_bg_index'] = 0
                     # Initialize a new round in normal gameplay
                     initialize_round(room_state)
                 # FIXED: Handle immediate church victory (when Darichris wins in special level)
                 elif prev_screen_when_timer_expired == 'CHURCH_VICTORY_IMMEDIATE':
                     # After immediate church victory, return to normal gameplay
                     print("Immediate church victory ended. Returning to normal gameplay.")
-                    # NEW: Reset church victory sound flag
+                    # NEW: Reset church victory sound flags
                     room_state['church_victory_sound_triggered'] = False
+                    room_state['church_victory_bg_index'] = 0
                     # The special level was already ended, just start a new round
                     initialize_round(room_state)
                 elif prev_screen_when_timer_expired == 'VICTORY':
@@ -681,10 +689,12 @@ def game_tick(room_state):
                                         else:
                                             # The non-Darichris player was killed - this means Darichris won!
                                             print("Darichris defeated the AI! Church victory...")
+                                            chosen_bg_index = random.choice([0, 1])  # 0 = churchvictory.png, 1 = churchvictory2.png
                                             room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS,
-                                                              'church_victory_sound_triggered': True})  # NEW: Flag for Darius sound
-                                            room_state['current_background_index'] = random.choice([0, 1])
+                                                              'church_victory_sound_triggered': True, 'church_victory_bg_index': chosen_bg_index})
+                                            room_state['current_background_index'] = chosen_bg_index
                                             room_state['round_winner_player_id'] = 'player2'  
+                                            print(f"Immediate church victory using background index {chosen_bg_index} ({'churchvictory.png' if chosen_bg_index == 0 else 'churchvictory2.png'})")
                                             end_special_level(room_state)
                                     else:
                                         handle_round_victory(room_state, 'player1', 'player2')
@@ -727,10 +737,12 @@ def game_tick(room_state):
                                         else:
                                             # The non-Darichris player was killed - this means Darichris won!
                                             print("Darichris defeated the AI! Church victory...")
+                                            chosen_bg_index = random.choice([0, 1])  # 0 = churchvictory.png, 1 = churchvictory2.png
                                             room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS,
-                                                              'church_victory_sound_triggered': True})  # NEW: Flag for Darius sound
-                                            room_state['current_background_index'] = random.choice([0, 1])
+                                                              'church_victory_sound_triggered': True, 'church_victory_bg_index': chosen_bg_index})
+                                            room_state['current_background_index'] = chosen_bg_index
                                             room_state['round_winner_player_id'] = 'player1'  
+                                            print(f"Immediate church victory using background index {chosen_bg_index} ({'churchvictory.png' if chosen_bg_index == 0 else 'churchvictory2.png'})")
                                             end_special_level(room_state)
                                     else:
                                         handle_round_victory(room_state, 'player2', 'player1')
