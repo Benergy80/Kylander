@@ -5,7 +5,7 @@ import time
 import os
 
 # Kylander: The Reckoning - Server Code
-# FIXED: Ducking stuck bug and balanced AI attack frequency
+# Updated with jump defense mechanics, AI balance, and dual Darius sound support
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'kylander_is_the_best_keep_it_secret_CHANGE_THIS!')
@@ -37,14 +37,14 @@ PARIS_BG_COUNT = 7; CHURCH_BG_COUNT = 3; VICTORY_BG_COUNT = 10; SLIDESHOW_COUNT 
 CHARACTER_NAMES = ["The Potzer", "The Kylander", "Darichris"]
 AI_SID_PLACEHOLDER = "AI_PLAYER_SID" 
 
-# FIXED: Rebalanced AI constants for better gameplay
+# UPDATED: Balanced AI constants with new values
 AI_SPEED_MULTIPLIER = 0.6  # Movement speed multiplier
-AI_PREFERRED_DISTANCE = 75  # REDUCED: From 85 to 75 as requested
+AI_PREFERRED_DISTANCE = 85  # REVERTED: Back to 85 optimal fighting distance (was 100)
 AI_DISTANCE_BUFFER = 30     # Distance tolerance
-AI_ATTACK_FREQUENCY = 0.12  # REDUCED: From 0.22 to 0.12 (much less frequent attacks)
+AI_ATTACK_FREQUENCY = 0.22  # Less frequent attacks
 AI_JUMP_FREQUENCY = 0.15    # Reduced jumping frequency
-AI_DUCK_FREQUENCY = 0.18    # REDUCED: From 0.2 to 0.18 (slightly less ducking)
-AI_ATTACK_COOLDOWN_BONUS = 60  # INCREASED: From 45 to 60 (even longer AI cooldown)
+AI_DUCK_FREQUENCY = 0.2     # More frequent ducking
+AI_ATTACK_COOLDOWN_BONUS = 45  # Much longer AI cooldown
 
 game_sessions = {}; game_room_id = 'default_room' 
 
@@ -65,8 +65,7 @@ def get_default_player_state(player_id_num, character_name_choice=None):
         'vertical_velocity': 0, 'cooldown_timer': 0, 'has_hit_this_attack': False,
         'is_ready_next_round': False, '_ai_last_duck_time': 0, '_ai_last_jump_time': 0,
         'miss_swing': False,  # Track missed swings for sound effects
-        'knockback_timer': 0,  # NEW: Track knockback state
-        'duck_state_sync_timer': 0  # NEW: Track duck state for better sync
+        'knockback_timer': 0  # NEW: Track knockback state
     }
 
 def get_default_room_state():
@@ -94,8 +93,7 @@ def get_default_room_state():
         'special_level_original_p2_char': None,
         'slideshow_music_started': False,  # Track slideshow music state
         'church_victory_sound_triggered': False,  # Track when to play Darius sound
-        'church_victory_bg_index': 0,  # NEW: Track which church victory background (0 or 1) for sound selection
-        'used_church_victory_bgs': []  # NEW: Track which church victory backgrounds have been used
+        'church_victory_bg_index': 0  # NEW: Track which church victory background (0 or 1) for sound selection
     }
 game_sessions[game_room_id] = get_default_room_state()
 
@@ -127,19 +125,13 @@ def cleanup_room_state(room_state):
         # Reset knockback
         player_state['knockback_timer'] = 0
         
-        # ENHANCED: More aggressive ducking state cleanup
+        # FIXED: Additional safeguards to prevent getting stuck in states
+        # If player is somehow ducking while jumping or attacking, reset ducking
         if player_state.get('is_ducking') and (player_state.get('is_jumping') or player_state.get('is_attacking')):
             print(f"CLEANUP: Resetting stuck ducking state for {player_state.get('id', 'unknown')}")
             player_state['is_ducking'] = False
-            player_state['current_animation'] = 'idle'
-            player_state['duck_state_sync_timer'] = 0  # Reset sync timer
-            
-        # ADDITIONAL: Reset ducking if it's been active too long without movement
-        if player_state.get('is_ducking') and player_state.get('duck_state_sync_timer', 0) > 120:  # 2 seconds at 60fps
-            print(f"TIMEOUT: Resetting long-duration duck for {player_state.get('id', 'unknown')}")
-            player_state['is_ducking'] = False
-            player_state['current_animation'] = 'idle'
-            player_state['duck_state_sync_timer'] = 0
+            if not player_state.get('is_jumping') and not player_state.get('is_attacking'):
+                player_state['current_animation'] = 'idle'
     
     room_state['sfx_event_for_client'] = None
     room_state['swordeffects_playing'] = False
@@ -155,7 +147,7 @@ def reset_player_for_round(player_state, room_state):
                          'is_ducking': False, 'vertical_velocity': 0, 'current_animation': 'idle', 
                          'has_hit_this_attack': False, 'is_ready_next_round': False,
                          'facing': 1 if player_state['id'] == 'player1' else -1,
-                         'miss_swing': False, 'knockback_timer': 0, 'duck_state_sync_timer': 0})  
+                         'miss_swing': False, 'knockback_timer': 0})  
     # FIXED: Proper asset swapping for special level
     if room_state['special_level_active'] and player_state['id'] == room_state['special_swap_target_player_id']:
         player_state['character_name'] = "Darichris" 
@@ -262,30 +254,15 @@ def update_player_physics_and_timers(player_state):
                 player_state.update({'y': GROUND_LEVEL, 'is_jumping': False, 'vertical_velocity': 0})
         return  # Don't process any other movement during knockback
     
-    # ENHANCED: Better ducking state management with timeout
-    if player_state.get('is_ducking'):
-        player_state['duck_state_sync_timer'] = player_state.get('duck_state_sync_timer', 0) + 1
-        # Force reset ducking if conflicting states
-        if player_state['is_jumping'] or player_state['is_attacking']:
-            print(f"FORCE RESET: Ducking disabled due to conflict for {player_state.get('id', 'unknown')}")
-            player_state['is_ducking'] = False
-            player_state['duck_state_sync_timer'] = 0
-            player_state['current_animation'] = 'jump' if player_state['is_jumping'] else ('attack' if player_state['is_attacking'] else 'idle')
-        # Timeout protection - max 3 seconds of continuous ducking
-        elif player_state['duck_state_sync_timer'] > 180:  # 3 seconds at 60fps
-            print(f"TIMEOUT RESET: Ducking disabled due to timeout for {player_state.get('id', 'unknown')}")
-            player_state['is_ducking'] = False
-            player_state['duck_state_sync_timer'] = 0
-            player_state['current_animation'] = 'idle'
-    else:
-        player_state['duck_state_sync_timer'] = 0
+    # FIXED: Reset ducking when jumping or attacking (prevents getting stuck)
+    if player_state['is_jumping'] or player_state['is_attacking']:
+        player_state['is_ducking'] = False
     
     if player_state['is_jumping']:
         player_state['y'] += player_state['vertical_velocity']; player_state['vertical_velocity'] += GRAVITY
         if player_state['y'] >= GROUND_LEVEL:
             player_state.update({'y': GROUND_LEVEL, 'is_jumping': False, 'vertical_velocity': 0})
-            if not player_state['is_attacking'] and not player_state['is_ducking']: 
-                player_state['current_animation'] = 'idle'
+            if not player_state['is_attacking']: player_state['current_animation'] = 'idle'
     if player_state['cooldown_timer'] > 0: player_state['cooldown_timer'] -= 1
     if player_state['is_attacking']:
         player_state['attack_timer'] -= 1
@@ -294,20 +271,14 @@ def update_player_physics_and_timers(player_state):
             if not player_state['has_hit_this_attack']:
                 player_state['miss_swing'] = True
             player_state.update({'is_attacking': False, 'has_hit_this_attack': False, 'cooldown_timer': ATTACK_COOLDOWN})
-            # Better animation state management after attack
-            if player_state['is_jumping']:
-                player_state['current_animation'] = 'jump'
-            elif player_state['is_ducking']:
-                player_state['current_animation'] = 'duck'
-            else:
-                player_state['current_animation'] = 'idle'
+            player_state['current_animation'] = 'idle' if not player_state['is_jumping'] else 'jump'
 
 def apply_screen_wrap(player_state):
     if player_state['x'] > GAME_WIDTH + PLAYER_SPRITE_HALF_WIDTH: player_state['x'] = -PLAYER_SPRITE_HALF_WIDTH +1 
     elif player_state['x'] < -PLAYER_SPRITE_HALF_WIDTH: player_state['x'] = GAME_WIDTH + PLAYER_SPRITE_HALF_WIDTH -1
 
 def update_ai(ai_state, target_state, room_state):
-    """REBALANCED: AI behavior with reduced attack frequency and better positioning"""
+    """Balanced AI behavior with updated frequencies and positioning - less aggressive, more defensive"""
     if not ai_state or not target_state or ai_state['health'] <= 0: return
     update_player_physics_and_timers(ai_state)
     
@@ -320,44 +291,41 @@ def update_ai(ai_state, target_state, room_state):
     distance = abs(dx)
     current_time_s = time.time()
     
-    # UPDATED: Ducking behavior - slightly less frequent but still defensive
+    # UPDATED: More frequent ducking when threatened
     if (target_state['is_attacking'] and distance < PLAYER_ATTACK_RANGE + 40 and 
         not ai_state['is_jumping'] and random.random() < AI_DUCK_FREQUENCY):
-        if current_time_s - ai_state.get('_ai_last_duck_time', 0) > 2.2:  # Slightly longer cooldown
-            ai_state.update({'is_ducking': True, 'current_animation': 'duck', 'duck_state_sync_timer': 0})
+        if current_time_s - ai_state.get('_ai_last_duck_time', 0) > 2.0:  # Slightly reduced cooldown
+            ai_state.update({'is_ducking': True, 'current_animation': 'duck'})
             ai_state['_ai_last_duck_time'] = current_time_s
     elif ai_state['is_ducking']:
         ai_state['is_ducking'] = False
         if not ai_state['is_attacking'] and not ai_state['is_jumping']:
             ai_state['current_animation'] = 'idle'
     
-    # REBALANCED: Much less aggressive attack frequency
-    attack_frequency = AI_ATTACK_FREQUENCY  # 0.12 - much more conservative
+    # UPDATED: Less aggressive attack frequency and longer optimal distance
+    attack_frequency = AI_ATTACK_FREQUENCY  # 0.22 - more conservative than before
     if room_state.get('special_level_active') and ai_state.get('display_character_name') == 'Darichris':
-        attack_frequency = 0.35  # REDUCED: From 0.55 to 0.35 for special level
+        attack_frequency = 0.55  # Still more than normal but not too aggressive
     
-    # Only attack when in proper range and with longer delays
+    # Only attack when in proper range and not too frequently
     if (not ai_state['is_attacking'] and ai_state['cooldown_timer'] == 0 and 
         not ai_state['is_ducking'] and 
         distance >= AI_PREFERRED_DISTANCE - AI_DISTANCE_BUFFER and
-        distance <= PLAYER_ATTACK_RANGE + 15):  # Slightly tighter attack range
+        distance <= PLAYER_ATTACK_RANGE + 20):  # UPDATED: Slightly more generous attack range
         if random.random() < attack_frequency:
             ai_state.update({
                 'is_attacking': True, 
                 'attack_timer': ATTACK_DURATION,
                 'current_animation': 'jump_attack' if ai_state['is_jumping'] else 'attack',
                 'has_hit_this_attack': False,
-                'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS  # 15 + 60 = 75 total cooldown
+                'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS  # UPDATED: Much longer AI cooldown (15 + 45 = 60)
             })
     
-    # BALANCED: Movement behavior with new preferred distance (75)
+    # BALANCED: Movement behavior with updated distance buffer (now prefers 85 distance)
     if not ai_state['is_attacking'] and not ai_state['is_ducking']:
-        # FIXED: Track if AI is actually moving to properly manage walk animation
-        ai_is_moving = False
-        
         # Move 70% of the time
         if random.random() >= 0.3:
-            # Keep optimal fighting distance
+            # Keep optimal fighting distance with updated buffer
             if distance > AI_PREFERRED_DISTANCE + AI_DISTANCE_BUFFER:
                 # Move closer
                 move_speed = int(PLAYER_SPEED * AI_SPEED_MULTIPLIER)
@@ -369,7 +337,6 @@ def update_ai(ai_state, target_state, room_state):
                     ai_state['facing'] = -1
                 if not ai_state['is_jumping']:
                     ai_state['current_animation'] = 'walk'
-                ai_is_moving = True
             elif distance < AI_PREFERRED_DISTANCE - AI_DISTANCE_BUFFER:
                 # Move away to maintain distance
                 move_speed = int(PLAYER_SPEED * AI_SPEED_MULTIPLIER)
@@ -381,25 +348,16 @@ def update_ai(ai_state, target_state, room_state):
                     ai_state['facing'] = -1
                 if not ai_state['is_jumping']:
                     ai_state['current_animation'] = 'walk'
-                ai_is_moving = True
             else:
                 # In optimal range - just face opponent
                 if not ai_state['is_jumping']:
                     ai_state['current_animation'] = 'idle'
                 ai_state['facing'] = 1 if dx > 0 else -1
-        else:
-            # Not moving this frame - set to idle
-            if not ai_state['is_jumping']:
-                ai_state['current_animation'] = 'idle'
-        
-        # FIXED: Reset walk animation to idle when AI stops moving
-        if not ai_is_moving and not ai_state['is_jumping'] and ai_state['current_animation'] == 'walk':
-            ai_state['current_animation'] = 'idle'
     
-    # UPDATED: Conservative jumping for more predictable AI behavior
+    # UPDATED: More conservative jumping for less erratic AI behavior
     if (not ai_state['is_jumping'] and not ai_state['is_ducking'] and 
         random.random() < AI_JUMP_FREQUENCY):
-        if current_time_s - ai_state.get('_ai_last_jump_time', 0) > 3.5:  # Even longer jump cooldown
+        if current_time_s - ai_state.get('_ai_last_jump_time', 0) > 3.0:  # Increased cooldown for less jumping
             ai_state.update({
                 'is_jumping': True,
                 'vertical_velocity': PLAYER_JUMP_VELOCITY,
@@ -459,17 +417,7 @@ def game_tick(room_state):
                          room_state['round_winner_player_id'] == room_state['special_swap_target_player_id']:
                         # Darichris (swapped player) won the special round. Show church victory screen.
                         print("Darichris won special round. Showing church victory screen.")
-                        
-                        # FIXED: Alternate between church victory backgrounds
-                        available_church_victory_bgs = [i for i in [0, 1] if i not in room_state.get('used_church_victory_bgs', [])]
-                        if not available_church_victory_bgs:
-                            # Reset if both have been used
-                            room_state['used_church_victory_bgs'] = []
-                            available_church_victory_bgs = [0, 1]
-                        
-                        chosen_bg_index = random.choice(available_church_victory_bgs)
-                        room_state.setdefault('used_church_victory_bgs', []).append(chosen_bg_index)
-                        
+                        chosen_bg_index = random.choice([0, 1])  # 0 = churchvictory.png, 1 = churchvictory2.png
                         room_state.update({'current_screen': 'CHURCH_VICTORY', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS,
                                           'church_victory_sound_triggered': True, 'church_victory_bg_index': chosen_bg_index})
                         room_state['current_background_index'] = chosen_bg_index
@@ -555,8 +503,6 @@ def game_tick(room_state):
                     # NEW: Reset church victory sound flags
                     room_state['church_victory_sound_triggered'] = False
                     room_state['church_victory_bg_index'] = 0
-                    room_state['used_church_victory_bgs'] = []  # Reset church victory background tracking
-                    room_state['used_church_victory_bgs'] = []  # Reset church victory background tracking
                     # Initialize a new round in normal gameplay
                     initialize_round(room_state)
                 # FIXED: Handle immediate church victory (when Darichris wins in special level)
@@ -743,17 +689,7 @@ def game_tick(room_state):
                                         else:
                                             # The non-Darichris player was killed - this means Darichris won!
                                             print("Darichris defeated the AI! Church victory...")
-                                            
-                                            # FIXED: Alternate between church victory backgrounds
-                                            available_church_victory_bgs = [i for i in [0, 1] if i not in room_state.get('used_church_victory_bgs', [])]
-                                            if not available_church_victory_bgs:
-                                                # Reset if both have been used
-                                                room_state['used_church_victory_bgs'] = []
-                                                available_church_victory_bgs = [0, 1]
-                                            
-                                            chosen_bg_index = random.choice(available_church_victory_bgs)
-                                            room_state.setdefault('used_church_victory_bgs', []).append(chosen_bg_index)
-                                            
+                                            chosen_bg_index = random.choice([0, 1])  # 0 = churchvictory.png, 1 = churchvictory2.png
                                             room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS,
                                                               'church_victory_sound_triggered': True, 'church_victory_bg_index': chosen_bg_index})
                                             room_state['current_background_index'] = chosen_bg_index
@@ -801,17 +737,7 @@ def game_tick(room_state):
                                         else:
                                             # The non-Darichris player was killed - this means Darichris won!
                                             print("Darichris defeated the AI! Church victory...")
-                                            
-                                            # FIXED: Alternate between church victory backgrounds
-                                            available_church_victory_bgs = [i for i in [0, 1] if i not in room_state.get('used_church_victory_bgs', [])]
-                                            if not available_church_victory_bgs:
-                                                # Reset if both have been used
-                                                room_state['used_church_victory_bgs'] = []
-                                                available_church_victory_bgs = [0, 1]
-                                            
-                                            chosen_bg_index = random.choice(available_church_victory_bgs)
-                                            room_state.setdefault('used_church_victory_bgs', []).append(chosen_bg_index)
-                                            
+                                            chosen_bg_index = random.choice([0, 1])  # 0 = churchvictory.png, 1 = churchvictory2.png
                                             room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS,
                                                               'church_victory_sound_triggered': True, 'church_victory_bg_index': chosen_bg_index})
                                             room_state['current_background_index'] = chosen_bg_index
@@ -1070,9 +996,6 @@ def handle_player_actions(data):
         print(f"Player {player['id']} in knockback, ignoring input")
         return
     
-    # FIXED: Track if movement action occurred to properly reset walk animation
-    movement_action_taken = False
-    
     for action_data in actions:
         action_type = action_data.get('type')
         if action_type == 'move':
@@ -1083,54 +1006,36 @@ def handle_player_actions(data):
                 apply_screen_wrap(player) 
                 if not player['is_jumping']: player['current_animation'] = 'walk'
                 action_taken = True
-                movement_action_taken = True
         elif action_type == 'jump':
             if not player['is_jumping'] and not player['is_ducking'] and not player['is_attacking']:
                 player['is_jumping'] = True; player['vertical_velocity'] = PLAYER_JUMP_VELOCITY
                 player['current_animation'] = 'jump'; player['is_ducking'] = False  # FIXED: Explicitly reset ducking
-                player['duck_state_sync_timer'] = 0  # Reset duck timer
                 action_taken = True
         elif action_type == 'duck':
             is_ducking_cmd = action_data.get('active', False)
             if not player['is_jumping'] and not player['is_attacking']:
-                # ENHANCED: Much more explicit ducking state management with logging
+                # FIXED: More explicit ducking state management
                 old_ducking_state = player['is_ducking']
                 player['is_ducking'] = is_ducking_cmd
-                if is_ducking_cmd:
-                    player['duck_state_sync_timer'] = 0  # Reset timer when starting to duck
-                    player['current_animation'] = 'duck'
-                else:
-                    player['duck_state_sync_timer'] = 0  # Reset timer when stopping duck
-                    player['current_animation'] = 'idle'
-                
                 if old_ducking_state != is_ducking_cmd:
+                    player['current_animation'] = 'duck' if is_ducking_cmd else 'idle'
                     action_taken = True
-                    print(f"DUCK ACTION: Player {player['id']} ducking: {old_ducking_state} -> {is_ducking_cmd}")
+                    print(f"Player {player['id']} ducking state changed: {old_ducking_state} -> {is_ducking_cmd}")
         elif action_type == 'attack':
             if not player['is_attacking'] and player['cooldown_timer'] == 0 and not player['is_ducking']:
                 player['is_attacking'] = True; player['attack_timer'] = ATTACK_DURATION
                 player['current_animation'] = 'jump_attack' if player['is_jumping'] else 'attack'
                 player['has_hit_this_attack'] = False; player['is_ducking'] = False  # FIXED: Explicitly reset ducking
-                player['duck_state_sync_timer'] = 0  # Reset duck timer
                 action_taken = True
-    
-    # FIXED: Reset walk animation to idle when no movement action is taken
-    if not movement_action_taken and not player['is_jumping'] and not player['is_attacking'] and not player['is_ducking']:
-        if player['current_animation'] == 'walk':
-            player['current_animation'] = 'idle'
-            print(f"ANIMATION: Reset walk to idle for {player['id']}")
-    
-    # ENHANCED: Final safety check with better logging
+    # FIXED: Final safety check - if no action taken and in a weird state, reset to idle
     if not action_taken and not player['is_jumping'] and not player['is_attacking'] and \
        not player['is_ducking'] and player['current_animation'] not in ['idle', 'jump', 'duck', 'attack', 'jump_attack']:
-        print(f"SAFETY: Resetting animation to idle for {player['id']} (was: {player['current_animation']})")
         player['current_animation'] = 'idle'
     
-    # ADDITIONAL SAFETY: Reset animation if state doesn't match with more aggressive checking
+    # ADDITIONAL SAFETY: Reset animation if state doesn't match
     if not player['is_ducking'] and player['current_animation'] == 'duck':
         print(f"SAFETY: Resetting duck animation for {player['id']} (not ducking but animation stuck)")
         player['current_animation'] = 'idle' if not player['is_jumping'] and not player['is_attacking'] else player['current_animation']
-        player['duck_state_sync_timer'] = 0
 
 # IMPROVED: Background change functionality
 @socketio.on('change_background')
