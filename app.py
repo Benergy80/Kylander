@@ -36,10 +36,10 @@ AI_SID_PLACEHOLDER = "AI_PLAYER_SID"
 
 # UPDATED: Balanced AI constants with new values
 AI_SPEED_MULTIPLIER = 0.6  # Movement speed multiplier
-AI_PREFERRED_DISTANCE = 100  # UPDATED: Even further optimal fighting distance (was 85)
+AI_PREFERRED_DISTANCE = 85  # REVERTED: Back to 85 optimal fighting distance (was 100)
 AI_DISTANCE_BUFFER = 30     # Distance tolerance
 AI_ATTACK_FREQUENCY = 0.22  # Less frequent attacks
-AI_JUMP_FREQUENCY = 0.15    # UPDATED: Reduced jumping frequency (was 0.3)
+AI_JUMP_FREQUENCY = 0.15    # Reduced jumping frequency
 AI_DUCK_FREQUENCY = 0.2     # More frequent ducking
 AI_ATTACK_COOLDOWN_BONUS = 45  # Much longer AI cooldown
 
@@ -314,7 +314,7 @@ def update_ai(ai_state, target_state, room_state):
                 'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS  # UPDATED: Much longer AI cooldown (15 + 45 = 60)
             })
     
-    # BALANCED: Movement behavior with updated distance buffer (now prefers 100 distance vs 85)
+    # BALANCED: Movement behavior with updated distance buffer (now prefers 85 distance)
     if not ai_state['is_attacking'] and not ai_state['is_ducking']:
         # Move 70% of the time
         if random.random() >= 0.3:
@@ -559,6 +559,11 @@ def game_tick(room_state):
             if p1 and p2 and p1['health'] > 0 and p2['health'] > 0:
                 p1_hit_this_tick = False; p2_hit_this_tick = False
                 
+                # === COMBAT MECHANICS OVERVIEW ===
+                # 1. SWORD CLASH/BLOCK: Both players attacking simultaneously = knockback, stun, clash sound
+                # 2. EVASION (Jump/Duck): Avoid damage but NO clash effects (just miss sound)
+                # 3. NORMAL HIT: Attack connects = damage and hit sound
+                
                 # IMPROVED: Enhanced collision detection with centered sprites
                 SPRITE_CENTER_OFFSET_X = 0  # Sprites are already centered properly
                 SPRITE_CENTER_OFFSET_Y = 25  # Adjust for bottom-aligned sprites
@@ -572,7 +577,8 @@ def game_tick(room_state):
                 CLASH_DETECTION_RANGE = 110  # INCREASED: Even more generous (was 90)
                 VERTICAL_CLASH_TOLERANCE = 80  # INCREASED: (was 70)
                 
-                # IMPROVED: Very generous simultaneous attack handling
+                # IMPROVED: SWORD CLASH DETECTION - Only when both players are actively attacking
+                # This is a TRUE BLOCK that causes knockback, stun, and clash effects
                 if p1['is_attacking'] and p2['is_attacking'] and \
                    p1['health'] > 0 and p2['health'] > 0 and \
                    abs(p1_center_x - p2_center_x) < CLASH_DETECTION_RANGE and \
@@ -622,11 +628,11 @@ def game_tick(room_state):
                         # Screen flash effect
                         room_state['clash_flash_timer'] = 8  # INCREASED: (was 5)
                         
-                        print("GENEROUS CLASH SUCCESSFUL!"); room_state['sfx_event_for_client'] = 'sfx_swordClash'
+                        print("GENEROUS CLASH SUCCESSFUL! - TRUE SWORD BLOCK"); room_state['sfx_event_for_client'] = 'sfx_swordClash'
                         
                 else:
-                    # No clash detected - check for individual hits
-                    # IMPROVED: Better collision detection extending to edge of sprites
+                    # No sword clash detected - check for individual hits and evasive maneuvers
+                    # IMPORTANT: Jump/Duck are EVASION (avoid damage) not BLOCKS (no clash effects)
                     ATTACK_RANGE_EXTENSION = 50  # INCREASED from 42.5 (PLAYER_ATTACK_RANGE / 2)
                     HIT_BOX_WIDTH = 45  # How wide the hit detection is
                     
@@ -637,20 +643,24 @@ def game_tick(room_state):
                         else:  # Facing left
                             attack_x = p1_center_x - ATTACK_RANGE_EXTENSION
                         
-                        # NEW: JUMP DEFENSE MECHANIC - Check if attack hit p2 (not ducking AND not jumping, unless attacker is also jumping)
+                        # Check if attack can potentially hit p2
                         can_hit_p2 = (abs(attack_x - p2_center_x) < HIT_BOX_WIDTH and 
                                      abs(p1_center_y - p2_center_y) < VERTICAL_CLASH_TOLERANCE)
                         
-                        # JUMP DEFENSE: If defender is jumping, they avoid damage UNLESS attacker is also jumping
-                        if can_hit_p2 and not p2['is_ducking']:
-                            if p2['is_jumping'] and not p1['is_jumping']:
-                                # Defender is jumping and attacker is not - JUMP DEFENSE successful!
-                                print(f"P2 JUMP DEFENSE! P2 avoided P1's ground attack by jumping")
+                        if can_hit_p2:
+                            # Check for EVASIVE MANEUVERS (duck or jump defense)
+                            if p2['is_ducking']:
+                                # DUCK EVASION - avoids damage, no clash effects
+                                print(f"P2 DUCK EVASION! P2 avoided P1's attack by ducking")
                                 p1['has_hit_this_attack'] = True  # Prevent multiple attempts
-                                # Play a different sound or no sound to indicate the block
+                                room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'  # Miss sound
+                            elif p2['is_jumping'] and not p1['is_jumping']:
+                                # JUMP EVASION - defender jumping vs ground attacker, avoids damage, no clash effects
+                                print(f"P2 JUMP EVASION! P2 avoided P1's ground attack by jumping")
+                                p1['has_hit_this_attack'] = True  # Prevent multiple attempts
                                 room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'  # Miss sound
                             else:
-                                # Normal hit - either both jumping or defender not jumping
+                                # SUCCESSFUL HIT - either both jumping or defender not evading
                                 p2['health'] -= 10; p1['has_hit_this_attack'] = True; p1_hit_this_tick = True
                                 print(f"P1 HIT P2. P2 Health: {p2['health']} (P1 jumping: {p1['is_jumping']}, P2 jumping: {p2['is_jumping']})")
                                 room_state['sfx_event_for_client'] = 'sfx_swordSwing'
@@ -678,20 +688,24 @@ def game_tick(room_state):
                         else:  # Facing left
                             attack_x = p2_center_x - ATTACK_RANGE_EXTENSION
                         
-                        # NEW: JUMP DEFENSE MECHANIC - Check if attack hit p1 (not ducking AND not jumping, unless attacker is also jumping)
+                        # Check if attack can potentially hit p1
                         can_hit_p1 = (abs(attack_x - p1_center_x) < HIT_BOX_WIDTH and 
                                      abs(p2_center_y - p1_center_y) < VERTICAL_CLASH_TOLERANCE)
                         
-                        # JUMP DEFENSE: If defender is jumping, they avoid damage UNLESS attacker is also jumping
-                        if can_hit_p1 and not p1['is_ducking']:
-                            if p1['is_jumping'] and not p2['is_jumping']:
-                                # Defender is jumping and attacker is not - JUMP DEFENSE successful!
-                                print(f"P1 JUMP DEFENSE! P1 avoided P2's ground attack by jumping")
+                        if can_hit_p1:
+                            # Check for EVASIVE MANEUVERS (duck or jump defense)
+                            if p1['is_ducking']:
+                                # DUCK EVASION - avoids damage, no clash effects
+                                print(f"P1 DUCK EVASION! P1 avoided P2's attack by ducking")
                                 p2['has_hit_this_attack'] = True  # Prevent multiple attempts
-                                # Play a different sound or no sound to indicate the block
+                                room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'  # Miss sound
+                            elif p1['is_jumping'] and not p2['is_jumping']:
+                                # JUMP EVASION - defender jumping vs ground attacker, avoids damage, no clash effects
+                                print(f"P1 JUMP EVASION! P1 avoided P2's ground attack by jumping")
+                                p2['has_hit_this_attack'] = True  # Prevent multiple attempts
                                 room_state['sfx_event_for_client'] = 'sfx_swordWhoosh'  # Miss sound
                             else:
-                                # Normal hit - either both jumping or defender not jumping
+                                # SUCCESSFUL HIT - either both jumping or defender not evading
                                 p1['health'] -= 10; p2['has_hit_this_attack'] = True; p2_hit_this_tick = True
                                 print(f"P2 HIT P1. P1 Health: {p1['health']} (P1 jumping: {p1['is_jumping']}, P2 jumping: {p2['is_jumping']})")
                                 room_state['sfx_event_for_client'] = 'sfx_swordSwing'
