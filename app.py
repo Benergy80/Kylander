@@ -37,14 +37,15 @@ PARIS_BG_COUNT = 7; CHURCH_BG_COUNT = 3; VICTORY_BG_COUNT = 10; SLIDESHOW_COUNT 
 CHARACTER_NAMES = ["The Potzer", "The Kylander", "Darichris"]
 AI_SID_PLACEHOLDER = "AI_PLAYER_SID" 
 
-# UPDATED: Balanced AI constants with new values
+# IMPROVED: Better balanced AI constants
 AI_SPEED_MULTIPLIER = 0.6  # Movement speed multiplier
-AI_PREFERRED_DISTANCE = 85  # REVERTED: Back to 85 optimal fighting distance (was 100)
-AI_DISTANCE_BUFFER = 30     # Distance tolerance
-AI_ATTACK_FREQUENCY = 0.22  # Less frequent attacks
-AI_JUMP_FREQUENCY = 0.15    # Reduced jumping frequency
+AI_PREFERRED_DISTANCE = 75  # REDUCED: Closer optimal fighting distance (was 85)
+AI_DISTANCE_BUFFER = 25     # REDUCED: Tighter distance tolerance (was 30)
+AI_ATTACK_FREQUENCY = 0.18  # REDUCED: Even less frequent attacks (was 0.22)
+AI_JUMP_FREQUENCY = 0.12    # REDUCED: Less jumping (was 0.15)
 AI_DUCK_FREQUENCY = 0.2     # More frequent ducking
 AI_ATTACK_COOLDOWN_BONUS = 45  # Much longer AI cooldown
+AI_DECISION_FREQUENCY = 0.6   # NEW: AI only makes movement decisions 60% of the time
 
 game_sessions = {}; game_room_id = 'default_room' 
 
@@ -65,7 +66,7 @@ def get_default_player_state(player_id_num, character_name_choice=None):
         'vertical_velocity': 0, 'cooldown_timer': 0, 'has_hit_this_attack': False,
         'is_ready_next_round': False, '_ai_last_duck_time': 0, '_ai_last_jump_time': 0,
         'miss_swing': False,  # Track missed swings for sound effects
-        'knockback_timer': 0  # NEW: Track knockback state
+        'knockback_timer': 0  # Track knockback state
     }
 
 def get_default_room_state():
@@ -148,6 +149,7 @@ def reset_player_for_round(player_state, room_state):
                          'has_hit_this_attack': False, 'is_ready_next_round': False,
                          'facing': 1 if player_state['id'] == 'player1' else -1,
                          'miss_swing': False, 'knockback_timer': 0})  
+    
     # FIXED: Proper asset swapping for special level
     if room_state['special_level_active'] and player_state['id'] == room_state['special_swap_target_player_id']:
         player_state['character_name'] = "Darichris" 
@@ -278,7 +280,7 @@ def apply_screen_wrap(player_state):
     elif player_state['x'] < -PLAYER_SPRITE_HALF_WIDTH: player_state['x'] = GAME_WIDTH + PLAYER_SPRITE_HALF_WIDTH -1
 
 def update_ai(ai_state, target_state, room_state):
-    """Balanced AI behavior with updated frequencies and positioning - less aggressive, more defensive"""
+    """SIMPLIFIED AI behavior - less jerky, more predictable"""
     if not ai_state or not target_state or ai_state['health'] <= 0: return
     update_player_physics_and_timers(ai_state)
     
@@ -291,10 +293,10 @@ def update_ai(ai_state, target_state, room_state):
     distance = abs(dx)
     current_time_s = time.time()
     
-    # UPDATED: More frequent ducking when threatened
+    # IMPROVED: More frequent ducking when threatened
     if (target_state['is_attacking'] and distance < PLAYER_ATTACK_RANGE + 40 and 
         not ai_state['is_jumping'] and random.random() < AI_DUCK_FREQUENCY):
-        if current_time_s - ai_state.get('_ai_last_duck_time', 0) > 2.0:  # Slightly reduced cooldown
+        if current_time_s - ai_state.get('_ai_last_duck_time', 0) > 2.0:
             ai_state.update({'is_ducking': True, 'current_animation': 'duck'})
             ai_state['_ai_last_duck_time'] = current_time_s
     elif ai_state['is_ducking']:
@@ -302,30 +304,32 @@ def update_ai(ai_state, target_state, room_state):
         if not ai_state['is_attacking'] and not ai_state['is_jumping']:
             ai_state['current_animation'] = 'idle'
     
-    # UPDATED: Less aggressive attack frequency and longer optimal distance
-    attack_frequency = AI_ATTACK_FREQUENCY  # 0.22 - more conservative than before
+    # IMPROVED: Less aggressive attack frequency
+    attack_frequency = AI_ATTACK_FREQUENCY  # 0.18 - more conservative
     if room_state.get('special_level_active') and ai_state.get('display_character_name') == 'Darichris':
-        attack_frequency = 0.55  # Still more than normal but not too aggressive
+        attack_frequency = 0.45  # Still higher for special level
+    
+    # IMPROVED: Larger attack zone to prevent AI standing outside range
+    EFFECTIVE_ATTACK_RANGE = PLAYER_ATTACK_RANGE + 35  # INCREASED: Much larger attack zone
     
     # Only attack when in proper range and not too frequently
     if (not ai_state['is_attacking'] and ai_state['cooldown_timer'] == 0 and 
         not ai_state['is_ducking'] and 
         distance >= AI_PREFERRED_DISTANCE - AI_DISTANCE_BUFFER and
-        distance <= PLAYER_ATTACK_RANGE + 20):  # UPDATED: Slightly more generous attack range
+        distance <= EFFECTIVE_ATTACK_RANGE):  # IMPROVED: Use larger attack zone
         if random.random() < attack_frequency:
             ai_state.update({
                 'is_attacking': True, 
                 'attack_timer': ATTACK_DURATION,
                 'current_animation': 'jump_attack' if ai_state['is_jumping'] else 'attack',
                 'has_hit_this_attack': False,
-                'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS  # UPDATED: Much longer AI cooldown (15 + 45 = 60)
+                'cooldown_timer': ATTACK_COOLDOWN + AI_ATTACK_COOLDOWN_BONUS
             })
     
-    # Movement behavior - SIMPLE APPROACH: Just reduce the frequency of decisions
+    # SIMPLIFIED: Less frequent movement decisions to reduce jerkiness
     if not ai_state['is_attacking'] and not ai_state['is_ducking']:
-        # Move 70% of the time, but make decisions less frequently to reduce jerkiness
-        if random.random() >= 0.4:  # SLIGHTLY LESS frequent decisions (was 0.3)
-            # Keep optimal fighting distance with updated buffer
+        # NEW: Only make movement decisions some of the time
+        if random.random() < AI_DECISION_FREQUENCY:  # 60% of the time
             if distance > AI_PREFERRED_DISTANCE + AI_DISTANCE_BUFFER:
                 # Move closer
                 move_speed = int(PLAYER_SPEED * AI_SPEED_MULTIPLIER)
@@ -353,11 +357,12 @@ def update_ai(ai_state, target_state, room_state):
                 if not ai_state['is_jumping']:
                     ai_state['current_animation'] = 'idle'
                 ai_state['facing'] = 1 if dx > 0 else -1
+        # ELSE: AI doesn't make a movement decision this frame - keeps current animation
     
-    # UPDATED: More conservative jumping for less erratic AI behavior
+    # IMPROVED: Less frequent jumping
     if (not ai_state['is_jumping'] and not ai_state['is_ducking'] and 
         random.random() < AI_JUMP_FREQUENCY):
-        if current_time_s - ai_state.get('_ai_last_jump_time', 0) > 3.0:  # Increased cooldown for less jumping
+        if current_time_s - ai_state.get('_ai_last_jump_time', 0) > 3.5:  # Longer cooldown
             ai_state.update({
                 'is_jumping': True,
                 'vertical_velocity': PLAYER_JUMP_VELOCITY,
@@ -1027,10 +1032,12 @@ def handle_player_actions(data):
                 player['current_animation'] = 'jump_attack' if player['is_jumping'] else 'attack'
                 player['has_hit_this_attack'] = False; player['is_ducking'] = False  # FIXED: Explicitly reset ducking
                 action_taken = True
-    # FIXED: Final safety check - if no action taken and in a weird state, reset to idle
-    if not action_taken and not player['is_jumping'] and not player['is_attacking'] and \
-       not player['is_ducking'] and player['current_animation'] not in ['idle', 'jump', 'duck', 'attack', 'jump_attack']:
-        player['current_animation'] = 'idle'
+    
+    # IMPROVED: Better animation state management for human player
+    if not action_taken and not player['is_jumping'] and not player['is_attacking'] and not player['is_ducking']:
+        # Only reset to idle if we're not in a valid animation state
+        if player['current_animation'] not in ['idle', 'walk']:
+            player['current_animation'] = 'idle'
     
     # ADDITIONAL SAFETY: Reset animation if state doesn't match
     if not player['is_ducking'] and player['current_animation'] == 'duck':
