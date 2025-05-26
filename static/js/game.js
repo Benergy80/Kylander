@@ -1067,6 +1067,7 @@ function handleKeyUp(e) {
 window.addEventListener('keydown', handleKeyDown);
 window.addEventListener('keyup', handleKeyUp);
 
+
 function sendPlayerActions() {
     if (!['PLAYING', 'SPECIAL'].includes(roomState.current_screen) || !localPlayerId || !roomState.players || !socket.connected) return;
     const myClientPlayerObject = Object.values(roomState.players).find(p => p.sid === socket.id);
@@ -1096,7 +1097,10 @@ function sendPlayerActions() {
         actions.push({ type: 'attack' });
         // Let server handle all attack sounds for consistency
     }
-    if (actions.length > 0) socket.emit('player_actions', { actions: actions });
+    
+    // FIXED: Always send actions to server, even if empty
+    // This allows server to detect when movement keys are released
+    socket.emit('player_actions', { actions: actions });
 }
 
 function enableAudioContext() {
