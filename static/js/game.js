@@ -611,11 +611,14 @@ function drawChurchIntroScreen() {
     }
 }
 
-// UPDATED: Church victory screen function with Darius sound support
+// FIXED: Church victory screen function - corrected background selection and removed text
 function drawChurchVictoryScreen() {
-    // Use UI assets for church victory screens
-    const bgKey = `ui_churchVictory${roomState.current_background_index === 1 ? '2' : '1'}`;
+    // FIXED: Correct background key construction - index 0 = churchvictory.png, index 1 = churchvictory2.png
+    const bgIndex = roomState.current_background_index || 0;
+    const bgKey = `ui_churchVictory${bgIndex === 0 ? '1' : '2'}`;  // FIXED: 0 = churchVictory1, 1 = churchVictory2
     const bgImg = loadedAssets.images[bgKey];
+    
+    console.log(`Church victory: bgIndex=${bgIndex}, bgKey=${bgKey}, bgImg found=${!!bgImg}`);
     
     if (bgImg) {
         ctx.drawImage(bgImg, 0, 0, GAME_WIDTH, GAME_HEIGHT);
@@ -630,27 +633,8 @@ function drawChurchVictoryScreen() {
         ctx.textAlign = 'left';
     }
 
-    // NEW: Add visual indicator when Darius sound is playing with specific messaging
-    if (roomState.church_victory_sound_triggered) {
-        const bgIndex = roomState.church_victory_bg_index || roomState.current_background_index || 0;
-        const message = bgIndex === 0 ? "DARICHRIS CLAIMS THE PRIZE" : "DARICHRIS HAS CLAIMED VICTORY";
-        
-        ctx.font = '28px HighlanderFont, Arial Black';
-        ctx.fillStyle = 'white';
-        ctx.textAlign = 'center';
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = 3;
-        ctx.shadowColor = "rgba(0,0,0,0.9)";
-        ctx.shadowBlur = 6;
-        ctx.shadowOffsetX = 3;
-        ctx.shadowOffsetY = 3;
-        ctx.strokeText(message, GAME_WIDTH / 2, GAME_HEIGHT - 60);
-        ctx.fillText(message, GAME_WIDTH / 2, GAME_HEIGHT - 60);
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-        ctx.textAlign = 'left';
-    }
+    // REMOVED: All text overlay - church victory images should display without any text
+    // The images themselves contain the appropriate visuals
 }
 
 // FIXED: Add special end screen with dark quickening only
