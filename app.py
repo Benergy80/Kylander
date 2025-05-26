@@ -94,7 +94,8 @@ def get_default_room_state():
         'special_level_original_p2_char': None,
         'slideshow_music_started': False,  # Track slideshow music state
         'church_victory_sound_triggered': False,  # Track when to play Darius sound
-        'church_victory_bg_index': 0  # NEW: Track which church victory background (0 or 1) for sound selection
+        'church_victory_bg_index': 0,  # NEW: Track which church victory background (0 or 1) for sound selection
+        'used_church_victory_bgs': []  # NEW: Track which church victory backgrounds have been used
     }
 game_sessions[game_room_id] = get_default_room_state()
 
@@ -351,6 +352,9 @@ def update_ai(ai_state, target_state, room_state):
     
     # BALANCED: Movement behavior with new preferred distance (75)
     if not ai_state['is_attacking'] and not ai_state['is_ducking']:
+        # FIXED: Track if AI is actually moving to properly manage walk animation
+        ai_is_moving = False
+        
         # Move 70% of the time
         if random.random() >= 0.3:
             # Keep optimal fighting distance
@@ -365,6 +369,7 @@ def update_ai(ai_state, target_state, room_state):
                     ai_state['facing'] = -1
                 if not ai_state['is_jumping']:
                     ai_state['current_animation'] = 'walk'
+                ai_is_moving = True
             elif distance < AI_PREFERRED_DISTANCE - AI_DISTANCE_BUFFER:
                 # Move away to maintain distance
                 move_speed = int(PLAYER_SPEED * AI_SPEED_MULTIPLIER)
@@ -376,11 +381,20 @@ def update_ai(ai_state, target_state, room_state):
                     ai_state['facing'] = -1
                 if not ai_state['is_jumping']:
                     ai_state['current_animation'] = 'walk'
+                ai_is_moving = True
             else:
                 # In optimal range - just face opponent
                 if not ai_state['is_jumping']:
                     ai_state['current_animation'] = 'idle'
                 ai_state['facing'] = 1 if dx > 0 else -1
+        else:
+            # Not moving this frame - set to idle
+            if not ai_state['is_jumping']:
+                ai_state['current_animation'] = 'idle'
+        
+        # FIXED: Reset walk animation to idle when AI stops moving
+        if not ai_is_moving and not ai_state['is_jumping'] and ai_state['current_animation'] == 'walk':
+            ai_state['current_animation'] = 'idle'
     
     # UPDATED: Conservative jumping for more predictable AI behavior
     if (not ai_state['is_jumping'] and not ai_state['is_ducking'] and 
@@ -445,7 +459,17 @@ def game_tick(room_state):
                          room_state['round_winner_player_id'] == room_state['special_swap_target_player_id']:
                         # Darichris (swapped player) won the special round. Show church victory screen.
                         print("Darichris won special round. Showing church victory screen.")
-                        chosen_bg_index = random.choice([0, 1])  # 0 = churchvictory.png, 1 = churchvictory2.png
+                        
+                        # FIXED: Alternate between church victory backgrounds
+                        available_church_victory_bgs = [i for i in [0, 1] if i not in room_state.get('used_church_victory_bgs', [])]
+                        if not available_church_victory_bgs:
+                            # Reset if both have been used
+                            room_state['used_church_victory_bgs'] = []
+                            available_church_victory_bgs = [0, 1]
+                        
+                        chosen_bg_index = random.choice(available_church_victory_bgs)
+                        room_state.setdefault('used_church_victory_bgs', []).append(chosen_bg_index)
+                        
                         room_state.update({'current_screen': 'CHURCH_VICTORY', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS,
                                           'church_victory_sound_triggered': True, 'church_victory_bg_index': chosen_bg_index})
                         room_state['current_background_index'] = chosen_bg_index
@@ -531,6 +555,8 @@ def game_tick(room_state):
                     # NEW: Reset church victory sound flags
                     room_state['church_victory_sound_triggered'] = False
                     room_state['church_victory_bg_index'] = 0
+                    room_state['used_church_victory_bgs'] = []  # Reset church victory background tracking
+                    room_state['used_church_victory_bgs'] = []  # Reset church victory background tracking
                     # Initialize a new round in normal gameplay
                     initialize_round(room_state)
                 # FIXED: Handle immediate church victory (when Darichris wins in special level)
@@ -717,7 +743,17 @@ def game_tick(room_state):
                                         else:
                                             # The non-Darichris player was killed - this means Darichris won!
                                             print("Darichris defeated the AI! Church victory...")
-                                            chosen_bg_index = random.choice([0, 1])  # 0 = churchvictory.png, 1 = churchvictory2.png
+                                            
+                                            # FIXED: Alternate between church victory backgrounds
+                                            available_church_victory_bgs = [i for i in [0, 1] if i not in room_state.get('used_church_victory_bgs', [])]
+                                            if not available_church_victory_bgs:
+                                                # Reset if both have been used
+                                                room_state['used_church_victory_bgs'] = []
+                                                available_church_victory_bgs = [0, 1]
+                                            
+                                            chosen_bg_index = random.choice(available_church_victory_bgs)
+                                            room_state.setdefault('used_church_victory_bgs', []).append(chosen_bg_index)
+                                            
                                             room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS,
                                                               'church_victory_sound_triggered': True, 'church_victory_bg_index': chosen_bg_index})
                                             room_state['current_background_index'] = chosen_bg_index
@@ -765,7 +801,17 @@ def game_tick(room_state):
                                         else:
                                             # The non-Darichris player was killed - this means Darichris won!
                                             print("Darichris defeated the AI! Church victory...")
-                                            chosen_bg_index = random.choice([0, 1])  # 0 = churchvictory.png, 1 = churchvictory2.png
+                                            
+                                            # FIXED: Alternate between church victory backgrounds
+                                            available_church_victory_bgs = [i for i in [0, 1] if i not in room_state.get('used_church_victory_bgs', [])]
+                                            if not available_church_victory_bgs:
+                                                # Reset if both have been used
+                                                room_state['used_church_victory_bgs'] = []
+                                                available_church_victory_bgs = [0, 1]
+                                            
+                                            chosen_bg_index = random.choice(available_church_victory_bgs)
+                                            room_state.setdefault('used_church_victory_bgs', []).append(chosen_bg_index)
+                                            
                                             room_state.update({'current_screen': 'CHURCH_VICTORY_IMMEDIATE', 'state_timer_ms': VICTORY_SCREEN_DURATION_MS,
                                                               'church_victory_sound_triggered': True, 'church_victory_bg_index': chosen_bg_index})
                                             room_state['current_background_index'] = chosen_bg_index
@@ -1024,6 +1070,9 @@ def handle_player_actions(data):
         print(f"Player {player['id']} in knockback, ignoring input")
         return
     
+    # FIXED: Track if movement action occurred to properly reset walk animation
+    movement_action_taken = False
+    
     for action_data in actions:
         action_type = action_data.get('type')
         if action_type == 'move':
@@ -1034,6 +1083,7 @@ def handle_player_actions(data):
                 apply_screen_wrap(player) 
                 if not player['is_jumping']: player['current_animation'] = 'walk'
                 action_taken = True
+                movement_action_taken = True
         elif action_type == 'jump':
             if not player['is_jumping'] and not player['is_ducking'] and not player['is_attacking']:
                 player['is_jumping'] = True; player['vertical_velocity'] = PLAYER_JUMP_VELOCITY
@@ -1063,6 +1113,12 @@ def handle_player_actions(data):
                 player['has_hit_this_attack'] = False; player['is_ducking'] = False  # FIXED: Explicitly reset ducking
                 player['duck_state_sync_timer'] = 0  # Reset duck timer
                 action_taken = True
+    
+    # FIXED: Reset walk animation to idle when no movement action is taken
+    if not movement_action_taken and not player['is_jumping'] and not player['is_attacking'] and not player['is_ducking']:
+        if player['current_animation'] == 'walk':
+            player['current_animation'] = 'idle'
+            print(f"ANIMATION: Reset walk to idle for {player['id']}")
     
     # ENHANCED: Final safety check with better logging
     if not action_taken and not player['is_jumping'] and not player['is_attacking'] and \
